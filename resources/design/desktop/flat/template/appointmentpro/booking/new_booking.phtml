@@ -185,18 +185,6 @@ $gateways = (new Appointmentpro_Model_Gateways())->findAll(['value_id' => $value
                                 </div>
                               </div>
 
-                              <div class="form-group">
-                                <div class="col-sm-4">
-                                  <label class="control-label"><?php echo p__("appointmentpro", 'Previous Notes'); ?></label>
-                                </div>
-                                <div class="col-sm-8">
-                                  <div id="previous_notes_container" class="previous-notes-container">
-                                    <p id="previous_notes_message" class="text-muted"><?php echo p__("appointmentpro", 'Select a customer to view previous notes.'); ?></p>
-                                    <ul id="previous_notes_list" class="list-unstyled previous-notes-list"></ul>
-                                  </div>
-                                </div>
-                              </div>
-
 
                               <div class="row">
                                 <div class="col-md-12">
@@ -401,19 +389,11 @@ $gateways = (new Appointmentpro_Model_Gateways())->findAll(['value_id' => $value
               $('#customer_phone').val(data.customer.phone);
               $('#customer_id').val(data.customer.id);
 
-              if (typeof window.fetchCustomerNotes === 'function') {
-                window.fetchCustomerNotes(data.customer.id);
-              }
-
             } else {
               $('#customer_lastname').val('');
               $('#customer_firstname').val('');
               $('#customer_phone').val('');
               $('#customer_id').val(0);
-
-              if (typeof window.fetchCustomerNotes === 'function') {
-                window.fetchCustomerNotes(null);
-              }
             }
           },
           error: function() {
@@ -705,158 +685,32 @@ $gateways = (new Appointmentpro_Model_Gateways())->findAll(['value_id' => $value
     margin-right: 0px;
     margin-left: 0px;
   }
-
-  .previous-notes-container {
-    background-color: #f7f9fc;
-    border: 1px solid #e1e7ef;
-    border-radius: 4px;
-    padding: 10px 12px;
-    max-height: 180px;
-    overflow-y: auto;
-  }
-
-  .previous-notes-container.has-notes {
-    background-color: #ffffff;
-  }
-
-  .previous-notes-list {
-    margin: 0;
-    padding: 0;
-  }
-
-  .previous-note-item {
-    margin-bottom: 10px;
-  }
-
-  .previous-note-item:last-child {
-    margin-bottom: 0;
-  }
-
-  .previous-note-meta {
-    font-size: 12px;
-    color: #6c757d;
-  }
-
-  .previous-note-text {
-    font-size: 13px;
-    color: #2f353a;
-  }
 </style>
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
   $(document).ready(function() {
-    var previousNotesMessages = {
-      'default': '<?php echo addslashes(p__("appointmentpro", 'Select a customer to view previous notes.')); ?>',
-      'loading': '<?php echo addslashes(p__("appointmentpro", 'Loading previous notes...')); ?>',
-      'empty': '<?php echo addslashes(p__("appointmentpro", 'No previous notes found.')); ?>',
-      'error': '<?php echo addslashes(p__("appointmentpro", 'Unable to load previous notes.')); ?>'
-    };
-
-    var previousNotesSelectors = {
-      container: $('#previous_notes_container'),
-      message: $('#previous_notes_message'),
-      list: $('#previous_notes_list')
-    };
-
-    function resetPreviousNotes(message) {
-      previousNotesSelectors.container.removeClass('has-notes');
-      previousNotesSelectors.list.empty();
-      previousNotesSelectors.message.text(message).show();
-    }
-
-    function renderPreviousNotes(notes) {
-      previousNotesSelectors.list.empty();
-
-      if (!notes || !notes.length) {
-        resetPreviousNotes(previousNotesMessages.empty);
-        return;
-      }
-
-      previousNotesSelectors.container.addClass('has-notes');
-      previousNotesSelectors.message.hide();
-
-      $.each(notes, function(index, note) {
-        var $item = $('<li class="previous-note-item"></li>');
-        var metaParts = [];
-
-        if (note.appointment_date) {
-          metaParts.push(note.appointment_date);
-        }
-
-        if (note.service_name) {
-          metaParts.push(note.service_name);
-        }
-
-        if (note.status) {
-          metaParts.push(note.status);
-        }
-
-        if (!note.appointment_date && note.created_at) {
-          metaParts.push(note.created_at);
-        }
-
-        if (metaParts.length) {
-          $item.append('<div class="previous-note-meta">' + metaParts.join(' · ') + '</div>');
-        }
-
-        var $noteText = $('<div class="previous-note-text"></div>').text(note.note);
-        $item.append($noteText);
-        previousNotesSelectors.list.append($item);
-      });
-    }
-
-    function fetchCustomerNotes(customerId) {
-      if (!customerId) {
-        resetPreviousNotes(previousNotesMessages.default);
-        return;
-      }
-
-      previousNotesSelectors.container.removeClass('has-notes');
-      previousNotesSelectors.list.empty();
-      previousNotesSelectors.message.text(previousNotesMessages.loading).show();
-
-      $.ajax({
-        url: '/appointmentpro/booking/get-customer-notes',
-        type: 'POST',
-        dataType: 'json',
-        data: {
-          customer_id: customerId
-        },
-        success: function(response) {
-          if (response && response.success) {
-            renderPreviousNotes(response.notes || []);
-          } else {
-            resetPreviousNotes(previousNotesMessages.error);
-          }
-        },
-        error: function() {
-          resetPreviousNotes(previousNotesMessages.error);
-        }
-      });
-    }
-
     $('#customer_id').select2({
       ajax: {
-        url: '<?php echo $this->getUrl('appointmentpro/booking/get-customers') ?>',
+        url: '<?php echo $this->getUrl('appointmentpro/booking/get-customers') ?>', // Replace with your endpoint URL
         dataType: 'json',
         delay: 250,
         data: function(params) {
           return {
-            q: params.term || ''
+            q: params.term || '' // search term, empty string for initial load
           };
         },
         processResults: function(data) {
           return {
-            results: data.items
+            results: data.items // Adjust based on your API response structure
           };
         },
         cache: true
       },
-      minimumInputLength: 0,
+      minimumInputLength: 0, // Allow empty search term to fetch all customers
       placeholder: '<?php echo p__("appointmentpro", 'Select a customer'); ?>',
       allowClear: true,
-      width: '100%',
+      width: '100%', // Set the width to 100%
       language: {
         noResults: function() {
           return $('<div><?php echo p__("appointmentpro", 'No customers found.'); ?> <a class="btn btn-success btn-sm" rel="" href="#" id="add-new-customer"><?php echo p__("appointmentpro", 'Add new customer'); ?></a></div>');
@@ -864,27 +718,18 @@ $gateways = (new Appointmentpro_Model_Gateways())->findAll(['value_id' => $value
       }
     });
 
+    // Trigger an initial load to fetch all customers
     $('#customer_id').select2('open').select2('close');
-    resetPreviousNotes(previousNotesMessages.default);
 
     $('#customer_id').on('change', function() {
       var selectedId = $(this).val();
-      var select2Data = $('#customer_id').select2('data');
-      var selectedCustomer = (select2Data && select2Data.length) ? select2Data[0] : null;
-
+      var selectedCustomer = $('#customer_id').select2('data')[0];
       console.log('Selected customer ID:', selectedId);
       console.log('Selected customer object:', selectedCustomer);
+      $('#customer_email').val(selectedCustomer.email).trigger('input');
 
-      if (selectedCustomer && selectedCustomer.email) {
-        $('#customer_email').val(selectedCustomer.email).trigger('input');
-      } else {
-        $('#customer_email').val('').trigger('input');
-      }
-
-      fetchCustomerNotes(selectedId);
+      // You can add additional logic here to handle the selected customer object
     });
-
-    window.fetchCustomerNotes = fetchCustomerNotes;
   });
 
   let add_customer = {

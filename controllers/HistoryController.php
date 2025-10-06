@@ -86,10 +86,6 @@ class Appointmentpro_HistoryController extends Application_Controller_Default
             $offset = $request->getParam("offset", 0);
             $sorts = $request->getParam("sorts", []);
             $queries = $request->getParam("queries", []);
-
-            if (!is_array($queries)) {
-                $queries = [];
-            }
             $service_type = $this->getRequest()->getParam('service_type');
 
             $type = 'all';
@@ -113,23 +109,13 @@ class Appointmentpro_HistoryController extends Application_Controller_Default
                 }
             }
 
-            $customerId = array_key_exists('customer_id', $queries) ? $queries['customer_id'] : null;
-            if ($customerId === null || $customerId === '') {
-                $customerId = 'all';
-            }
-
-            $serviceId = array_key_exists('service_id', $queries) ? $queries['service_id'] : null;
-            if ($serviceId === null || $serviceId === '') {
-                $serviceId = 'all';
-            }
-
             $params = [
                 "limit" => $limit,
                 "offset" => $offset,
                 "sorts" => $sorts,
                 "queries" => $queries,
-                "customer_id" => $customerId,
-                "service_id" => $serviceId,
+                "customer_id" => (empty($queries)) ? 'all' : $queries['customer_id'] ,
+                "service_id" => (empty($queries)) ? 'all' : $queries['service_id'],
                 "type" => $type,
                 "service_type" => $service_type,
                 "todayDate" => $todayDate

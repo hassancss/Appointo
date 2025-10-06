@@ -225,11 +225,18 @@ class Appointmentpro_Model_Utils
                     $secondWorkStart = $breakEnd;
                     $secondWorkEnd = $existingEnd;
 
-                    // Special logic: Allow bookings that start during break periods
-                    // even if they might overlap with work periods later
+                    // Special logic: Allow bookings during break periods
+                    // But ensure the entire booking fits within the break period
                     if ($potentialStartTime >= $breakStart && $potentialStartTime < $breakEnd) {
-                        // Starting during break period - always allow this slot
-                        continue; // Don't block this slot, check next appointment
+                        // Starting during break period - check if entire booking fits in break
+                        if ($potentialEndTime <= $breakEnd) {
+                            // Entire booking fits within break period - allow it
+                            continue; // Don't block this slot, check next appointment
+                        } else {
+                            // Booking would extend into second work period - not allowed
+                            $canBook = false;
+                            break;
+                        }
                     }
 
                     // For bookings NOT starting in break period, check work period overlaps
@@ -273,32 +280,34 @@ class Appointmentpro_Model_Utils
 
         // Original logic for services without breaks
         $perSlotTime = 5; //min
-        $totalRequiredSlot = ($timeDiff / $perSlotTime);
-        $i = 0;
-        $checkFrom = $checkTo = null;
+        $totalRequiredSlots = ($timeDiff / $perSlotTime);
         $convertTimeArray = [];
-        $format = ''; // Default format               
+        $format = ''; // Default format
 
-        foreach ($timeArray as $tkey => $timeVal) {
-            $i++;
-            if ($checkTo == null) {
-                $checkFrom = $timeVal;
-                $key = (string) $timeVal;
-                $checkTo = strtotime('+' . ($timeDiff - $perSlotTime) . ' minutes', $timeVal);
+        // Convert array to indexed array for easier access
+        $timeArrayIndexed = array_values($timeArray);
+        $arrayCount = count($timeArrayIndexed);
+
+        // Check each slot to see if enough consecutive slots exist from that point
+        foreach ($timeArrayIndexed as $index => $startTime) {
+            $canFitService = true;
+
+            // Check if we have enough consecutive slots for this service
+            for ($i = 0; $i < $totalRequiredSlots; $i++) {
+                $expectedTime = strtotime('+' . ($i * $perSlotTime) . ' minutes', $startTime);
+                $actualIndex = $index + $i;
+
+                // Check if slot exists and matches expected time
+                if ($actualIndex >= $arrayCount || $timeArrayIndexed[$actualIndex] != $expectedTime) {
+                    $canFitService = false;
+                    break;
+                }
             }
 
-            if ($totalRequiredSlot == $i) {
-                if ($checkTo == $timeArray[$tkey]) {
-                    $keyTime = (string) $checkFrom;
-                    $convertTimeArray[$keyTime] = Appointmentpro_Model_Utils::timestampTotime($checkFrom, $format);
-                }
-                $i = 0;
-                $checkFrom = $checkTo = null;
-            } else {
-                if (strtotime('+' . $perSlotTime . ' minutes', $timeVal) != $timeArray[$tkey + 1]) {
-                    $i = 0;
-                    $checkFrom = $checkTo = null;
-                }
+            // If service fits, add this start time to available slots
+            if ($canFitService) {
+                $keyTime = (string) $startTime;
+                $convertTimeArray[$keyTime] = Appointmentpro_Model_Utils::timestampTotime($startTime, $format);
             }
         }
 
@@ -320,19 +329,44 @@ class Appointmentpro_Model_Utils
         $breakIsBookable = $breakInfo['break_is_bookable'];
 
         $totalServiceTime = $workBefore + $breakDuration + $workAfter;
+        $totalRequiredSlots = ceil($totalServiceTime / $perSlotTime);
 
         if ($breakIsBookable) {
-            // For services with bookable break time, show ALL individual slots
-            // This allows booking during break periods of other appointments
-            foreach ($timeArray as $timeVal) {
-                $keyTime = (string) $timeVal;
-                $displayTime = Appointmentpro_Model_Utils::timestampTotime($timeVal, $format);
-                $convertTimeArray[$keyTime] = $displayTime;
+            // For services with bookable break time, still need to verify full service can fit
+            // Only show slots where the ENTIRE service (chunks + break) can fit
+            foreach ($timeArray as $tkey => $timeVal) {
+                $canFitService = true;
+                $requiredEndTime = strtotime('+' . ($totalServiceTime - $perSlotTime) . ' minutes', $timeVal);
+
+                // Verify we have enough consecutive time slots for the full service duration
+                $currentSlotIndex = $tkey;
+                for ($i = 0; $i < $totalRequiredSlots; $i++) {
+                    $expectedTime = strtotime('+' . ($i * $perSlotTime) . ' minutes', $timeVal);
+
+                    // Check if this time slot exists in the available array
+                    $slotExists = false;
+                    foreach ($timeArray as $availableTime) {
+                        if ($availableTime == $expectedTime) {
+                            $slotExists = true;
+                            break;
+                        }
+                    }
+
+                    if (!$slotExists) {
+                        $canFitService = false;
+                        break;
+                    }
+                }
+
+                // Only show this slot if the full service duration can fit
+                if ($canFitService && $requiredEndTime <= end($timeArray)) {
+                    $keyTime = (string) $timeVal;
+                    $displayTime = Appointmentpro_Model_Utils::timestampTotime($timeVal, $format);
+                    $convertTimeArray[$keyTime] = $displayTime;
+                }
             }
         } else {
             // For services without bookable break time, only show full service slots
-            $totalRequiredSlots = ceil($totalServiceTime / $perSlotTime);
-
             foreach ($timeArray as $tkey => $timeVal) {
                 // Check if we have enough consecutive slots for the entire service
                 $canFitService = true;

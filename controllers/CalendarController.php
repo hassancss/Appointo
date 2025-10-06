@@ -40,7 +40,8 @@ class Appointmentpro_CalendarController extends Application_Controller_Default
                 "location_id" => $location_id,
                 "service_type" => 'services',
                 "appointment_start_date" => strtotime(date('d-m-Y', strtotime("-7 days"))),
-                "appointment_end_date" => strtotime(date('d-m-Y', strtotime("+30 days")))
+                "appointment_end_date" => strtotime(date('d-m-Y', strtotime("+30 days"))),
+                "chunk_mode" => true  // Enable chunk mode to load break configuration
             ];
 
 

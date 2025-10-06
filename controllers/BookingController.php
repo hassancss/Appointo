@@ -95,88 +95,6 @@ class Appointmentpro_BookingController extends Application_Controller_Default
         $this->_sendJson($payload);
     }
 
-    public function getCustomerNotesAction()
-    {
-        try {
-            $customerId = (int) $this->getRequest()->getParam('customer_id');
-
-            if (empty($customerId)) {
-                throw new \Exception(p__('appointmentpro', 'Customer ID is required.'));
-            }
-
-            $valueId = (new Appointmentpro_Model_Appointmentpro())->getCurrentValueId();
-            $settings = (new Appointmentpro_Model_Settings())->find($valueId, 'value_id');
-            $settingsData = $settings ? $settings->getData() : [];
-
-            $dateFormat = 'm/d/Y';
-            $timeFormat = 'g:i A';
-
-            if (!empty($settingsData)) {
-                $dateFormat = ($settingsData['date_format'] ?? 1) == 1 ? 'm/d/Y' : 'd/m/Y';
-                $timeFormat = ($settingsData['time_format'] ?? 2) == 1 ? 'H:i' : 'g:i A';
-            }
-
-            $bookings = (new Appointmentpro_Model_Booking())->findByCustomerId($valueId, [
-                'customer_id' => $customerId,
-            ]);
-
-            $notes = [];
-            foreach ($bookings as $booking) {
-                if (empty($booking['notes'])) {
-                    continue;
-                }
-
-                $appointmentDate = '';
-                if (!empty($booking['appointment_date'])) {
-                    $appointmentTimestamp = is_numeric($booking['appointment_date'])
-                        ? (int) $booking['appointment_date']
-                        : strtotime($booking['appointment_date']);
-
-                    if (!empty($appointmentTimestamp)) {
-                        $appointmentDate = date($dateFormat, $appointmentTimestamp);
-                    }
-                }
-
-                $createdAt = '';
-                if (!empty($booking['created_at'])) {
-                    $createdTimestamp = strtotime($booking['created_at']);
-                    if (!empty($createdTimestamp)) {
-                        $createdAt = date($dateFormat . ' ' . $timeFormat, $createdTimestamp);
-                    }
-                }
-
-                $statusLabel = '';
-                if (isset($booking['status']) && $booking['status'] !== '') {
-                    try {
-                        $statusLabel = p__('appointmentpro', Appointmentpro_Model_Appointment::getBookingStatus($booking['status']));
-                    } catch (\Throwable $throwable) {
-                        $statusLabel = '';
-                    }
-                }
-
-                $notes[] = [
-                    'note' => $booking['notes'],
-                    'appointment_date' => $appointmentDate,
-                    'created_at' => $createdAt,
-                    'service_name' => $booking['service_name'] ?? '',
-                    'status' => $statusLabel,
-                ];
-            }
-
-            $payload = [
-                'success' => true,
-                'notes' => $notes,
-            ];
-        } catch (\Exception $e) {
-            $payload = [
-                'error' => true,
-                'message' => $e->getMessage(),
-            ];
-        }
-
-        $this->_sendJson($payload);
-    }
-
     /**
      * Get form data for new appointment modal
      */
@@ -984,8 +902,20 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                         if (sizeof($queryData['appointments'])) {
                             $total_booking_per_slot = (int) $queryData['spData']['total_booking_per_slot'];
 
-                            if ($hasBreakTime && $breakInfo['break_is_bookable']) {
-                                // For services with bookable break time, handle differently
+                            // Check if ANY existing appointments have break time configuration
+                            $hasExistingBreaks = false;
+                            foreach ($queryData['appointments'] as $existingApp) {
+                                $existingBreakConfig = (new Appointmentpro_Model_ServiceBreakConfig())
+                                    ->find(['service_id' => $existingApp['service_id']]);
+                                if ($existingBreakConfig->getId() && $existingBreakConfig->getBreakIsBookable()) {
+                                    $hasExistingBreaks = true;
+                                    break;
+                                }
+                            }
+
+                            // Use checkAppointmentWithBreaks if current service OR existing appointments have breaks
+                            if ($hasExistingBreaks) {
+                                // Use break-aware checking
                                 $timeArray = (new Appointmentpro_Model_Utils())->checkAppointmentWithBreaks(
                                     $queryData['appointments'],
                                     $timeArray,
@@ -995,7 +925,7 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                                     $inputParams['service_id']
                                 );
                             } else {
-                                // Regular appointment checking
+                                // Regular appointment checking (no breaks anywhere)
                                 $timeArray = (new Appointmentpro_Model_Utils())->checkAppoinment($queryData['appointments'], $timeArray, $timeDiff, $total_booking_per_slot);
                             }
                         }
@@ -1511,6 +1441,54 @@ class Appointmentpro_BookingController extends Application_Controller_Default
             }
 
             $endTime = strtotime('+' . $bookingDuration . ' minutes', $startTime);
+
+            // VALIDATION: Check for overlapping appointments before saving
+            $db = Zend_Db_Table::getDefaultAdapter();
+            $select = $db->select()
+                ->from('appointment')
+                ->where('service_provider_id = ?', $param['provider_id'])
+                ->where('appointment_date = ?', $booking_date)
+                ->where('status != ?', 'cancelled'); // Exclude cancelled appointments
+
+            // If editing existing appointment, exclude it from overlap check
+            if (!empty($param['appointment_id'])) {
+                $select->where('appointment_id != ?', $param['appointment_id']);
+            }
+
+            $existingAppointments = $db->fetchAll($select);
+
+            if (!empty($existingAppointments)) {
+                // Check for overlaps using chunk-aware logic
+                $hasConflict = false;
+
+                if ($breakConfig->getId() && $breakConfig->getBreakIsBookable()) {
+                    // Use chunk-aware validation for services with breaks
+                    $hasConflict = $this->_checkChunkOverlap(
+                        $startTime,
+                        $endTime,
+                        $existingAppointments,
+                        $breakConfig,
+                        $service->getServiceTime()
+                    );
+                } else {
+                    // Simple overlap check for regular services
+                    foreach ($existingAppointments as $existing) {
+                        $existingStart = $existing['appointment_time'];
+                        $existingEnd = $existing['appointment_end_time'];
+
+                        // Check if appointments overlap
+                        if (!($endTime <= $existingStart || $startTime >= $existingEnd)) {
+                            $hasConflict = true;
+                            break;
+                        }
+                    }
+                }
+
+                if ($hasConflict) {
+                    throw new Exception(p__('appointmentpro', 'This time slot is no longer available. Please select another time.'));
+                }
+            }
+
             $setIsAddPlcPoints = (int) $service->getServicePoints();
             $amount = $service->getPrice();
             $tax_amount = 0;
@@ -2110,5 +2088,83 @@ class Appointmentpro_BookingController extends Application_Controller_Default
         header('Content-Type: application/json');
         echo json_encode($payload);
         exit;
+    }
+
+    /**
+     * Check if a new appointment with break chunks overlaps with existing appointments
+     * 
+     * @param int $newStart - Start timestamp of new appointment
+     * @param int $newEnd - End timestamp of new appointment
+     * @param array $existingAppointments - Array of existing appointments
+     * @param object $breakConfig - Break configuration model
+     * @param int $serviceTime - Service time in minutes
+     * @return bool - True if overlap detected, false otherwise
+     */
+    private function _checkChunkOverlap($newStart, $newEnd, $existingAppointments, $breakConfig, $serviceTime)
+    {
+        $workBefore = $breakConfig->getWorkTimeBeforeBreak() * 60; // Convert to seconds
+        $breakDuration = $breakConfig->getBreakDuration() * 60;
+        $workAfter = $breakConfig->getWorkTimeAfterBreak() * 60;
+
+        // Calculate chunks for new appointment
+        $newChunk1Start = $newStart;
+        $newChunk1End = $newStart + $workBefore;
+        $newBreakEnd = $newChunk1End + $breakDuration;
+        $newChunk2Start = $newBreakEnd;
+        $newChunk2End = $newEnd;
+
+        foreach ($existingAppointments as $existing) {
+            $existingStart = $existing['appointment_time'];
+            $existingEnd = $existing['appointment_end_time'];
+
+            // Get break config for existing appointment
+            $existingBreakConfig = (new Appointmentpro_Model_ServiceBreakConfig())
+                ->find(['service_id' => $existing['service_id']]);
+
+            if ($existingBreakConfig->getId() && $existingBreakConfig->getBreakIsBookable()) {
+                // Existing appointment has chunks - check chunk-to-chunk overlaps
+                $exWorkBefore = $existingBreakConfig->getWorkTimeBeforeBreak() * 60;
+                $exBreakDur = $existingBreakConfig->getBreakDuration() * 60;
+
+                $exChunk1Start = $existingStart;
+                $exChunk1End = $existingStart + $exWorkBefore;
+                $exBreakEnd = $exChunk1End + $exBreakDur;
+                $exChunk2Start = $exBreakEnd;
+                $exChunk2End = $existingEnd;
+
+                // Check new chunk 1 vs existing chunk 1
+                if (!($newChunk1End <= $exChunk1Start || $newChunk1Start >= $exChunk1End)) {
+                    return true; // Overlap found
+                }
+
+                // Check new chunk 1 vs existing chunk 2
+                if (!($newChunk1End <= $exChunk2Start || $newChunk1Start >= $exChunk2End)) {
+                    return true;
+                }
+
+                // Check new chunk 2 vs existing chunk 1
+                if (!($newChunk2End <= $exChunk1Start || $newChunk2Start >= $exChunk1End)) {
+                    return true;
+                }
+
+                // Check new chunk 2 vs existing chunk 2
+                if (!($newChunk2End <= $exChunk2Start || $newChunk2Start >= $exChunk2End)) {
+                    return true;
+                }
+            } else {
+                // Existing appointment is regular service - check full duration vs our chunks
+                // New chunk 1 vs existing full time
+                if (!($newChunk1End <= $existingStart || $newChunk1Start >= $existingEnd)) {
+                    return true;
+                }
+
+                // New chunk 2 vs existing full time
+                if (!($newChunk2End <= $existingStart || $newChunk2Start >= $existingEnd)) {
+                    return true;
+                }
+            }
+        }
+
+        return false; // No overlap found
     }
 }

@@ -123,8 +123,20 @@ class Appointmentpro_Mobile_ProviderController extends Application_Controller_Mo
                         if (sizeof($queryData['appointments'])) {
                             $total_booking_per_slot = (int) $queryData['spData']['total_booking_per_slot'];
 
-                            if ($hasBreakTime && $breakInfo['break_is_bookable']) {
-                                // For services with bookable break time, handle differently
+                            // Check if ANY existing appointments have break time configuration
+                            $hasExistingBreaks = false;
+                            foreach ($queryData['appointments'] as $existingApp) {
+                                $existingBreakConfig = (new Appointmentpro_Model_ServiceBreakConfig())
+                                    ->find(['service_id' => $existingApp['service_id']]);
+                                if ($existingBreakConfig->getId() && $existingBreakConfig->getBreakIsBookable()) {
+                                    $hasExistingBreaks = true;
+                                    break;
+                                }
+                            }
+
+                            // Use checkAppointmentWithBreaks if current service OR existing appointments have breaks
+                            if ($hasExistingBreaks) {
+                                // Use break-aware checking
                                 $timeArray = (new Appointmentpro_Model_Utils())->checkAppointmentWithBreaks(
                                     $queryData['appointments'],
                                     $timeArray,
@@ -134,7 +146,7 @@ class Appointmentpro_Mobile_ProviderController extends Application_Controller_Mo
                                     $inputParams['service_id']
                                 );
                             } else {
-                                // Regular appointment checking
+                                // Regular appointment checking (no breaks anywhere)
                                 $timeArray = (new Appointmentpro_Model_Utils())->checkAppoinment($queryData['appointments'], $timeArray, $timeDiff, $total_booking_per_slot);
                             }
                         }

@@ -1115,6 +1115,16 @@ class Appointmentpro_Model_Db_Table_Booking extends Core_Model_Db_Table
                 'c.lastname'
             ]);
 
+        // Join break config table only if chunk_mode parameter is enabled
+        if (array_key_exists("chunk_mode", $params) && $params['chunk_mode'] == true) {
+            $select->joinLeft(['sbc' => 'appointment_service_break_config'], 'sbc.service_id = s.service_id', [
+                'sbc.work_time_before_break',
+                'sbc.break_duration',
+                'sbc.work_time_after_break',
+                'sbc.break_is_bookable'
+            ]);
+        }
+
         $select->where('a.value_id = ?', $valuesId);
 
         if (array_key_exists("service_type", $params) && $params['service_type'] == 'services') {

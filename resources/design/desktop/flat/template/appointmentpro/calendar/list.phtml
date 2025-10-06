@@ -289,47 +289,11 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		margin-bottom: 1rem;
 	}
 
-        #new_appointment_modal .form-group label {
-                margin-bottom: 0.5rem;
-                font-weight: 500;
-                color: #495057;
-        }
-
-        .previous-notes-container {
-                background: #f7f9fc;
-                border: 1px solid #e1e7ef;
-                border-radius: 4px;
-                padding: 10px 12px;
-                max-height: 180px;
-                overflow-y: auto;
-        }
-
-        .previous-notes-container.has-notes {
-                background: #ffffff;
-        }
-
-        .previous-notes-list {
-                margin: 0;
-                padding: 0;
-        }
-
-        .previous-note-item {
-                margin-bottom: 10px;
-        }
-
-        .previous-note-item:last-child {
-                margin-bottom: 0;
-        }
-
-        .previous-note-meta {
-                font-size: 12px;
-                color: #6c757d;
-        }
-
-        .previous-note-text {
-                font-size: 13px;
-                color: #2f353a;
-        }
+	#new_appointment_modal .form-group label {
+		margin-bottom: 0.5rem;
+		font-weight: 500;
+		color: #495057;
+	}
 </style>
 
 
@@ -466,22 +430,12 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				</div>
 			</div>
 
-                        <div class="form-row">
-                                <div class="form-group col-md-12">
-                                        <label for="appointment_note"><?php echo p__("appointmentpro", "Note"); ?></label>
-                                        <textarea id="appointment_note" name="note" class="form-control" rows="3" placeholder="<?php echo p__("appointmentpro", "Enter a Note"); ?>"></textarea>
-                                </div>
-                        </div>
-
-                        <div class="form-row">
-                                <div class="form-group col-md-12">
-                                        <label><?php echo p__("appointmentpro", "Previous Notes"); ?></label>
-                                        <div id="calendar_previous_notes" class="previous-notes-container">
-                                                <p id="calendar_previous_notes_message" class="text-muted"><?php echo p__("appointmentpro", "Select a customer to view previous notes."); ?></p>
-                                                <ul id="calendar_previous_notes_list" class="list-unstyled previous-notes-list"></ul>
-                                        </div>
-                                </div>
-                        </div>
+			<div class="form-row">
+				<div class="form-group col-md-12">
+					<label for="appointment_note"><?php echo p__("appointmentpro", "Note"); ?></label>
+					<textarea id="appointment_note" name="note" class="form-control" rows="3" placeholder="<?php echo p__("appointmentpro", "Enter a Note"); ?>"></textarea>
+				</div>
+			</div>
 
 			<!-- Customer fields (initially hidden) -->
 			<div id="customer_fields" style="display: none;">
@@ -734,7 +688,7 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			// Get all existing events from the calendar
 			var existingEvents = $('#calendar').weekCalendar('getCalendarData').events || [];
 
-			// Also check against loaded data
+			// Also check against loaded data - but create chunks if break time exists
 			if (typeof bookingJson !== 'undefined' && bookingJson) {
 				var loadedEvents = [];
 				$.each(bookingJson, function(key, value) {
@@ -742,19 +696,63 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					var endTime = new Date(value.aptendtime);
 					var userId = usersIndex[value.provider_id];
 
-					loadedEvents.push({
-						start: startTime,
-						end: endTime,
-						userId: userId,
-						id: value.appointment_id
-					});
+					// Check if this appointment has break time configuration
+					var hasBreakConfig = value.work_time_before_break && value.break_duration && value.work_time_after_break && value.break_is_bookable;
+
+					if (hasBreakConfig) {
+						// Create chunk events for overlap checking (same logic as getEventData)
+						var workBefore = parseInt(value.work_time_before_break);
+						var breakDuration = parseInt(value.break_duration);
+						var workAfter = parseInt(value.work_time_after_break);
+
+						var chunk1Start = new Date(startTime);
+						var chunk1End = new Date(chunk1Start.getTime() + (workBefore * 60 * 1000));
+
+						var breakEnd = new Date(chunk1End.getTime() + (breakDuration * 60 * 1000));
+
+						var chunk2Start = new Date(breakEnd);
+						var chunk2End = new Date(chunk2Start.getTime() + (workAfter * 60 * 1000));
+
+						// Add both work chunks as separate events for overlap checking
+						loadedEvents.push({
+							start: chunk1Start,
+							end: chunk1End,
+							userId: userId,
+							id: value.appointment_id + '_chunk1',
+							parentId: value.appointment_id,
+							isChunk: true
+						});
+
+						loadedEvents.push({
+							start: chunk2Start,
+							end: chunk2End,
+							userId: userId,
+							id: value.appointment_id + '_chunk2',
+							parentId: value.appointment_id,
+							isChunk: true
+						});
+
+						console.log('Loaded chunked appointment for overlap check:', value.appointment_id, {
+							chunk1: [chunk1Start, chunk1End],
+							gap: [chunk1End, breakEnd],
+							chunk2: [chunk2Start, chunk2End]
+						});
+					} else {
+						// Regular appointment without chunks
+						loadedEvents.push({
+							start: startTime,
+							end: endTime,
+							userId: userId,
+							id: value.appointment_id
+						});
+					}
 				});
 
 				// Combine existing and loaded events
 				existingEvents = existingEvents.concat(loadedEvents);
 			}
 
-			console.log('Checking against', existingEvents.length, 'existing events');
+			console.log('Checking against', existingEvents.length, 'existing events (including chunks)');
 
 			// Check for time overlap with same provider/user
 			for (var i = 0; i < existingEvents.length; i++) {
@@ -762,6 +760,11 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 
 				// Skip if it's the same event (for updates)
 				if (existingEvent.id === newEvent.id) {
+					continue;
+				}
+
+				// Skip if it's a chunk from the same parent appointment
+				if (existingEvent.parentId && newEvent.parentId && existingEvent.parentId === newEvent.parentId) {
 					continue;
 				}
 
@@ -1345,102 +1348,10 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		}
 
 		// Initialize custom customer search functionality
-                function initializeCustomerSearch() {
-                        var searchTimeout;
-                        var currentCustomers = [];
-                        var selectedCustomer = null;
-
-                        var previousNotesMessages = {
-                                'default': '<?php echo addslashes(p__("appointmentpro", 'Select a customer to view previous notes.')); ?>',
-                                'loading': '<?php echo addslashes(p__("appointmentpro", 'Loading previous notes...')); ?>',
-                                'empty': '<?php echo addslashes(p__("appointmentpro", 'No previous notes found.')); ?>',
-                                'error': '<?php echo addslashes(p__("appointmentpro", 'Unable to load previous notes.')); ?>'
-                        };
-
-                        var previousNotesSelectors = {
-                                container: $('#calendar_previous_notes'),
-                                message: $('#calendar_previous_notes_message'),
-                                list: $('#calendar_previous_notes_list')
-                        };
-
-                        function resetModalPreviousNotes(message) {
-                                previousNotesSelectors.container.removeClass('has-notes');
-                                previousNotesSelectors.list.empty();
-                                previousNotesSelectors.message.text(message).show();
-                        }
-
-                        function renderModalPreviousNotes(notes) {
-                                previousNotesSelectors.list.empty();
-
-                                if (!notes || !notes.length) {
-                                        resetModalPreviousNotes(previousNotesMessages.empty);
-                                        return;
-                                }
-
-                                previousNotesSelectors.container.addClass('has-notes');
-                                previousNotesSelectors.message.hide();
-
-                                $.each(notes, function(index, note) {
-                                        var $item = $('<li class="previous-note-item"></li>');
-                                        var metaParts = [];
-
-                                        if (note.appointment_date) {
-                                                metaParts.push(note.appointment_date);
-                                        }
-
-                                        if (note.service_name) {
-                                                metaParts.push(note.service_name);
-                                        }
-
-                                        if (note.status) {
-                                                metaParts.push(note.status);
-                                        }
-
-                                        if (!note.appointment_date && note.created_at) {
-                                                metaParts.push(note.created_at);
-                                        }
-
-                                        if (metaParts.length) {
-                                                $item.append('<div class="previous-note-meta">' + metaParts.join(' · ') + '</div>');
-                                        }
-
-                                        var $noteText = $('<div class="previous-note-text"></div>').text(note.note);
-                                        $item.append($noteText);
-                                        previousNotesSelectors.list.append($item);
-                                });
-                        }
-
-                        function fetchModalCustomerNotes(customerId) {
-                                if (!customerId) {
-                                        resetModalPreviousNotes(previousNotesMessages.default);
-                                        return;
-                                }
-
-                                previousNotesSelectors.container.removeClass('has-notes');
-                                previousNotesSelectors.list.empty();
-                                previousNotesSelectors.message.text(previousNotesMessages.loading).show();
-
-                                $.ajax({
-                                        url: '/appointmentpro/booking/get-customer-notes',
-                                        type: 'POST',
-                                        dataType: 'json',
-                                        data: {
-                                                customer_id: customerId
-                                        },
-                                        success: function(response) {
-                                                if (response && response.success) {
-                                                        renderModalPreviousNotes(response.notes || []);
-                                                } else {
-                                                        resetModalPreviousNotes(previousNotesMessages.error);
-                                                }
-                                        },
-                                        error: function() {
-                                                resetModalPreviousNotes(previousNotesMessages.error);
-                                        }
-                                });
-                        }
-
-                        resetModalPreviousNotes(previousNotesMessages.default);
+		function initializeCustomerSearch() {
+			var searchTimeout;
+			var currentCustomers = [];
+			var selectedCustomer = null;
 
 			// Handle input changes with debouncing
 			$('#customer_search').bind('keyup', function() {
@@ -1644,14 +1555,12 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				$('#customer_firstname').val(firstName);
 				$('#customer_lastname').val(lastName);
 				$('#customer_email').val(email);
-                                $('#customer_phone').val(phone);
+				$('#customer_phone').val(phone);
 
-                                // Show customer input fields so user can see/edit the selected customer data
-                                $('.customer_inputs').show();
+				// Show customer input fields so user can see/edit the selected customer data
+				$('.customer_inputs').show();
 
-                                fetchModalCustomerNotes(customerId);
-
-                                console.log('Customer fields populated and shown');
+				console.log('Customer fields populated and shown');
 
 				// Verify fields are actually populated
 				setTimeout(function() {
@@ -1676,11 +1585,10 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				$('#customer_firstname').val('');
 				$('#customer_lastname').val('');
 				$('#customer_email').val('');
-                                $('#customer_phone').val('');
-                                $('.customer_inputs').show();
-                                fetchModalCustomerNotes(null);
-                                console.log('New customer inputs shown');
-                        }
+				$('#customer_phone').val('');
+				$('.customer_inputs').show();
+				console.log('New customer inputs shown');
+			}
 
 			// Load initial customers when customer tab is opened
 			function loadInitialCustomers() {
@@ -2265,19 +2173,15 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			$('#new_appointment_form')[0].reset();
 			$('#selected_customer_id').val('');
 			$('#customer_id').val(0); // Reset to 0 for new customer
-                        $('#customer_search').val(''); // Reset custom customer search
-                        $('#customer_search_results').hide(); // Hide search results
-                        $('.customer_inputs').hide();
-                        $('#service_price').text('-');
-                        $('#service_duration').text('-');
+			$('#customer_search').val(''); // Reset custom customer search
+			$('#customer_search_results').hide(); // Hide search results
+			$('.customer_inputs').hide();
+			$('#service_price').text('-');
+			$('#service_duration').text('-');
 
-                        $('#calendar_previous_notes_list').empty();
-                        $('#calendar_previous_notes_message').text('<?php echo p__("appointmentpro", "Select a customer to view previous notes."); ?>').show();
-                        $('#calendar_previous_notes').removeClass('has-notes');
-
-                        // Reset selected time slot display
-                        $('#selected_start_time').text('-');
-                        $('#selected_end_time').text('-');
+			// Reset selected time slot display
+			$('#selected_start_time').text('-');
+			$('#selected_end_time').text('-');
 
 			// Reset cascading dropdowns to initial state
 			$('#appointment_provider').attr('disabled', true).empty().append('<option value="">First select a location</option>');
@@ -2436,20 +2340,85 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 
 			var str = new Date(value.apttime);
 			var endt = new Date(value.aptendtime);
-			var evt = {
-				'id': value.appointment_id,
-				'start': str,
-				'end': endt,
-				'userId': usersIndex[value.provider_id],
-				'title': title,
-				'detail': value,
-				'ids': ids,
-				'provider': providerData[value.provider_id],
-				// Mark events loaded from server as read-only so they are not draggable/resizable
-				'readOnly': true
-			};
 
-			eventData.events.push(evt);
+			// Check if this appointment has break time configuration
+			var hasBreakConfig = value.work_time_before_break && value.break_duration && value.work_time_after_break && value.break_is_bookable;
+
+			if (hasBreakConfig) {
+				// Split appointment into 2 work chunks only (break time creates a gap for other appointments)
+				var workBefore = parseInt(value.work_time_before_break); // minutes
+				var breakDuration = parseInt(value.break_duration); // minutes
+				var workAfter = parseInt(value.work_time_after_break); // minutes
+
+				// Calculate chunk times - only show work periods, break creates a gap
+				var chunk1Start = new Date(str);
+				var chunk1End = new Date(chunk1Start.getTime() + (workBefore * 60 * 1000));
+
+				// Break period is NOT shown on calendar (creates gap for other appointments)
+				var breakEnd = new Date(chunk1End.getTime() + (breakDuration * 60 * 1000));
+
+				var chunk2Start = new Date(breakEnd);
+				var chunk2End = new Date(chunk2Start.getTime() + (workAfter * 60 * 1000));
+
+				// Create first work chunk
+				var evt1 = {
+					'id': value.appointment_id + '_chunk1',
+					'start': chunk1Start,
+					'end': chunk1End,
+					'userId': usersIndex[value.provider_id],
+					'title': title + '<br><?php echo p__("appointmentpro", "Part 1"); ?>',
+					'detail': value,
+					'ids': ids,
+					'provider': providerData[value.provider_id],
+					'readOnly': true,
+					'isChunk': true,
+					'chunkType': 'work',
+					'parentId': value.appointment_id
+				};
+
+				// Create second work chunk (after break)
+				var evt2 = {
+					'id': value.appointment_id + '_chunk2',
+					'start': chunk2Start,
+					'end': chunk2End,
+					'userId': usersIndex[value.provider_id],
+					'title': title + '<br><?php echo p__("appointmentpro", "Part 2"); ?>',
+					'detail': value,
+					'ids': ids,
+					'provider': providerData[value.provider_id],
+					'readOnly': true,
+					'isChunk': true,
+					'chunkType': 'work',
+					'parentId': value.appointment_id
+				};
+
+				// Only push work chunks - break time is not shown (creates gap for other bookings)
+				eventData.events.push(evt1);
+				eventData.events.push(evt2);
+
+				console.log('Appointment chunked (break creates gap):', value.appointment_id, {
+					'original': [str, endt],
+					'chunk1 (work)': [chunk1Start, chunk1End],
+					'break (gap)': [chunk1End, breakEnd],
+					'chunk2 (work)': [chunk2Start, chunk2End]
+				});
+			} else {
+				// Regular appointment without break time
+				var evt = {
+					'id': value.appointment_id,
+					'start': str,
+					'end': endt,
+					'userId': usersIndex[value.provider_id],
+					'title': title,
+					'detail': value,
+					'ids': ids,
+					'provider': providerData[value.provider_id],
+					// Mark events loaded from server as read-only so they are not draggable/resizable
+					'readOnly': true
+				};
+
+				eventData.events.push(evt);
+			}
 		});
 
 		return eventData;
