@@ -23,8 +23,8 @@ $services = $this->getServices();
 
                                                 <div id="row">
                                                     <div class="col-md-2">
-                                                        <select class="input-flat dt-search color-blue" name="customer_id" id="customer_id" data-dynatable-query="customer_id">
-                                                            <!-- <option value="all"><?php echo p__("appointmentpro", 'Select Customer'); ?></option> -->
+                                                        <select class="input-flat dt-search color-blue" name="customer_id" id="customer_id" data-dynatable-query="customer_id" data-placeholder="<?php echo p__("appointmentpro", 'Choose Customer'); ?>">
+                                                            <option value=""><?php echo p__("appointmentpro", 'Choose Customer'); ?></option>
                                                             <?php foreach ($customers as $key => $value) { ?>
                                                                 <option value="<?php echo $value->getId(); ?>"><?php echo $value->getFirstname() . ' (' . $value->getEmail() . ')'; ?></option>
                                                             <?php } ?>
@@ -32,10 +32,9 @@ $services = $this->getServices();
                                                     </div>
                                                     <!-- services -->
                                                     <div class="col-md-2">
-                                                    <select class="input-flat dt-search color-blue" name="service_id" id="service_id" data-dynatable-query="service_id">
-                                                            <!-- <option value="all"><?php echo p__("appointmentpro", 'Select Service'); ?></option> -->
-
-                                                            <option value="all" selected><?php echo p__("appointmentpro", 'All Services'); ?></option>
+                                                    <select class="input-flat dt-search color-blue" name="service_id" id="service_id" data-dynatable-query="service_id" data-placeholder="<?php echo p__("appointmentpro", 'Choose Service'); ?>">
+                                                            <option value=""><?php echo p__("appointmentpro", 'Choose Service'); ?></option>
+                                                            <option value="all"><?php echo p__("appointmentpro", 'All Services'); ?></option>
                                                             <?php foreach ($services as $key => $value) { ?>
                                                                 <option value="<?php echo $value->getId(); ?>"><?php echo $value->getName(); ?></option>
                                                             <?php } ?>
@@ -206,13 +205,6 @@ $services = $this->getServices();
     const $customerSelect = $('#customer_id');
     const $serviceSelect = $('#service_id');
 
-    const defaultCustomerOption = $customerSelect.find('option:first');
-    if (defaultCustomerOption.length) {
-        $customerSelect.val(defaultCustomerOption.val());
-    }
-
-    $serviceSelect.val('all');
-
     tableCustomers.bind('dynatable:preinit', function(e, dynatable) {
         dynatable.utility.textTransform.noStyle = function(text) {
             return text;
@@ -255,7 +247,7 @@ $services = $this->getServices();
         dataset: {
             ajax: true,
             ajaxUrl: '/appointmentpro/history/find-all/type/<?php echo $type; ?>/service_type/services',
-            ajaxOnLoad: true,
+            ajaxOnLoad: false,
             records: [],
             perPageDefault: 25
         },
@@ -267,8 +259,7 @@ $services = $this->getServices();
             recordText: '<?php echo __jss("record") ?>',
             recordTextPlural: '<?php echo __jss("records") ?>',
             textOf: '<?php echo __jss("of") ?>',
-            textTo: '<?php echo __jss("to") ?>',
-            queries: $('.dt-search')
+            textTo: '<?php echo __jss("to") ?>'
         },
         writers: {
             _rowWriter: rowWriter
@@ -276,6 +267,15 @@ $services = $this->getServices();
     });
 
     $(document).ready(function() {
+        const placeholderCustomerOption = $customerSelect.find('option').first().clone();
+        const customerOptions = $customerSelect.find('option').not(':first').sort(function(a, b) {
+            if (a.text.toLowerCase() > b.text.toLowerCase()) return 1;
+            if (a.text.toLowerCase() < b.text.toLowerCase()) return -1;
+            return 0;
+        });
+
+        $customerSelect.empty().append(placeholderCustomerOption).append(customerOptions);
+
         if ($.datepicker.regional['<?php echo Core_Model_Language::getCurrentLanguageDatepicker(); ?>']) {
             $.datepicker.setDefaults($.datepicker.regional['<?php echo Core_Model_Language::getCurrentLanguageDatepicker(); ?>']);
         } else {
@@ -366,26 +366,9 @@ $services = $this->getServices();
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     $(document).ready(function() {
-        // Sort the customer options alphabetically
-        $customerSelect.each(function() {
-            const select = $(this);
-            const options = select.find('option').sort(function(a, b) {
-                if (a.text.toLowerCase() > b.text.toLowerCase()) return 1;
-                if (a.text.toLowerCase() < b.text.toLowerCase()) return -1;
-                return 0;
-            });
-
-            select.empty().append(options);
-        });
-
-        const firstCustomerOption = $customerSelect.find('option:first');
-        let defaultCustomerId = '';
-        if (firstCustomerOption.length) {
-            defaultCustomerId = firstCustomerOption.val();
-            $customerSelect.val(defaultCustomerId);
-        }
-
         $customerSelect.select2({
+            placeholder: $customerSelect.data('placeholder'),
+            allowClear: true,
             language: {
                 noResults: function() {
                     return "<?php echo P__("appointmentpro", "No results found") ?>";
@@ -393,7 +376,9 @@ $services = $this->getServices();
             }
         });
 
-        $serviceSelect.val('all').select2({
+        $serviceSelect.select2({
+            placeholder: $serviceSelect.data('placeholder'),
+            allowClear: true,
             language: {
                 noResults: function() {
                     return "<?php echo P__("appointmentpro", "No results found") ?>";
@@ -402,30 +387,62 @@ $services = $this->getServices();
         });
 
         const dynatableInstance = tableCustomers.data('dynatable');
-        if (dynatableInstance) {
-            if (defaultCustomerId) {
-                dynatableInstance.queries.add('customer_id', defaultCustomerId);
+
+        function removeQuery(dynatable, key) {
+            if (!dynatable || !dynatable.queries) {
+                return;
             }
-            dynatableInstance.queries.add('service_id', $serviceSelect.val());
-            dynatableInstance.process();
+
+            if (typeof dynatable.queries.remove === 'function') {
+                dynatable.queries.remove(key);
+            } else if (dynatable.queries.queryRecord) {
+                delete dynatable.queries.queryRecord[key];
+            }
         }
 
-        // resetFilter
-        $('#resetFilter').click(function() {
+        function clearDynatableData() {
+            tableCustomers.find('tbody').empty();
+
             if (!dynatableInstance) {
                 return;
             }
 
-            dynatableInstance.queries = {};
+            removeQuery(dynatableInstance, 'customer_id');
+            removeQuery(dynatableInstance, 'service_id');
 
-            if (defaultCustomerId) {
-                $customerSelect.val(defaultCustomerId).trigger('change');
-            } else {
-                $customerSelect.trigger('change');
+            if (dynatableInstance.settings && dynatableInstance.settings.dataset) {
+                dynatableInstance.settings.dataset.records = [];
+                dynatableInstance.settings.dataset.originalRecords = [];
             }
 
-            $serviceSelect.val('all').trigger('change');
-            dynatableInstance.process();
-        });
+            if (dynatableInstance.dom && typeof dynatableInstance.dom.update === 'function') {
+                dynatableInstance.dom.update();
+            }
+        }
+
+        function processDynatableFilters() {
+            if (!dynatableInstance) {
+                return;
+            }
+
+            const customerId = $customerSelect.val();
+            const serviceId = $serviceSelect.val();
+
+            removeQuery(dynatableInstance, 'customer_id');
+            removeQuery(dynatableInstance, 'service_id');
+
+            if (customerId && serviceId) {
+                dynatableInstance.queries.add('customer_id', customerId);
+                dynatableInstance.queries.add('service_id', serviceId);
+                dynatableInstance.process();
+            } else {
+                clearDynatableData();
+            }
+        }
+
+        clearDynatableData();
+
+        $customerSelect.on('change', processDynatableFilters);
+        $serviceSelect.on('change', processDynatableFilters);
     });
 </script>
