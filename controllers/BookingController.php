@@ -95,6 +95,88 @@ class Appointmentpro_BookingController extends Application_Controller_Default
         $this->_sendJson($payload);
     }
 
+    public function getCustomerNotesAction()
+    {
+        try {
+            $customerId = (int) $this->getRequest()->getParam('customer_id');
+
+            if (empty($customerId)) {
+                throw new \Exception(p__('appointmentpro', 'Customer ID is required.'));
+            }
+
+            $valueId = (new Appointmentpro_Model_Appointmentpro())->getCurrentValueId();
+            $settings = (new Appointmentpro_Model_Settings())->find($valueId, 'value_id');
+            $settingsData = $settings ? $settings->getData() : [];
+
+            $dateFormat = 'm/d/Y';
+            $timeFormat = 'g:i A';
+
+            if (!empty($settingsData)) {
+                $dateFormat = ($settingsData['date_format'] ?? 1) == 1 ? 'm/d/Y' : 'd/m/Y';
+                $timeFormat = ($settingsData['time_format'] ?? 2) == 1 ? 'H:i' : 'g:i A';
+            }
+
+            $bookings = (new Appointmentpro_Model_Booking())->findByCustomerId($valueId, [
+                'customer_id' => $customerId,
+            ]);
+
+            $notes = [];
+            foreach ($bookings as $booking) {
+                if (empty($booking['notes'])) {
+                    continue;
+                }
+
+                $appointmentDate = '';
+                if (!empty($booking['appointment_date'])) {
+                    $appointmentTimestamp = is_numeric($booking['appointment_date'])
+                        ? (int) $booking['appointment_date']
+                        : strtotime($booking['appointment_date']);
+
+                    if (!empty($appointmentTimestamp)) {
+                        $appointmentDate = date($dateFormat, $appointmentTimestamp);
+                    }
+                }
+
+                $createdAt = '';
+                if (!empty($booking['created_at'])) {
+                    $createdTimestamp = strtotime($booking['created_at']);
+                    if (!empty($createdTimestamp)) {
+                        $createdAt = date($dateFormat . ' ' . $timeFormat, $createdTimestamp);
+                    }
+                }
+
+                $statusLabel = '';
+                if (isset($booking['status']) && $booking['status'] !== '') {
+                    try {
+                        $statusLabel = p__('appointmentpro', Appointmentpro_Model_Appointment::getBookingStatus($booking['status']));
+                    } catch (\Throwable $throwable) {
+                        $statusLabel = '';
+                    }
+                }
+
+                $notes[] = [
+                    'note' => $booking['notes'],
+                    'appointment_date' => $appointmentDate,
+                    'created_at' => $createdAt,
+                    'service_name' => $booking['service_name'] ?? '',
+                    'status' => $statusLabel,
+                ];
+            }
+
+            $payload = [
+                'success' => true,
+                'notes' => $notes,
+            ];
+        } catch (\Exception $e) {
+            $payload = [
+                'error' => true,
+                'message' => $e->getMessage(),
+            ];
+        }
+
+        $this->_sendJson($payload);
+    }
+
     /**
      * Get form data for new appointment modal
      */

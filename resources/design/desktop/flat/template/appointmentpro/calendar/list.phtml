@@ -289,11 +289,47 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		margin-bottom: 1rem;
 	}
 
-	#new_appointment_modal .form-group label {
-		margin-bottom: 0.5rem;
-		font-weight: 500;
-		color: #495057;
-	}
+        #new_appointment_modal .form-group label {
+                margin-bottom: 0.5rem;
+                font-weight: 500;
+                color: #495057;
+        }
+
+        .previous-notes-container {
+                background: #f7f9fc;
+                border: 1px solid #e1e7ef;
+                border-radius: 4px;
+                padding: 10px 12px;
+                max-height: 180px;
+                overflow-y: auto;
+        }
+
+        .previous-notes-container.has-notes {
+                background: #ffffff;
+        }
+
+        .previous-notes-list {
+                margin: 0;
+                padding: 0;
+        }
+
+        .previous-note-item {
+                margin-bottom: 10px;
+        }
+
+        .previous-note-item:last-child {
+                margin-bottom: 0;
+        }
+
+        .previous-note-meta {
+                font-size: 12px;
+                color: #6c757d;
+        }
+
+        .previous-note-text {
+                font-size: 13px;
+                color: #2f353a;
+        }
 </style>
 
 
@@ -430,12 +466,22 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				</div>
 			</div>
 
-			<div class="form-row">
-				<div class="form-group col-md-12">
-					<label for="appointment_note"><?php echo p__("appointmentpro", "Note"); ?></label>
-					<textarea id="appointment_note" name="note" class="form-control" rows="3" placeholder="<?php echo p__("appointmentpro", "Enter a Note"); ?>"></textarea>
-				</div>
-			</div>
+                        <div class="form-row">
+                                <div class="form-group col-md-12">
+                                        <label for="appointment_note"><?php echo p__("appointmentpro", "Note"); ?></label>
+                                        <textarea id="appointment_note" name="note" class="form-control" rows="3" placeholder="<?php echo p__("appointmentpro", "Enter a Note"); ?>"></textarea>
+                                </div>
+                        </div>
+
+                        <div class="form-row">
+                                <div class="form-group col-md-12">
+                                        <label><?php echo p__("appointmentpro", "Previous Notes"); ?></label>
+                                        <div id="calendar_previous_notes" class="previous-notes-container">
+                                                <p id="calendar_previous_notes_message" class="text-muted"><?php echo p__("appointmentpro", "Select a customer to view previous notes."); ?></p>
+                                                <ul id="calendar_previous_notes_list" class="list-unstyled previous-notes-list"></ul>
+                                        </div>
+                                </div>
+                        </div>
 
 			<!-- Customer fields (initially hidden) -->
 			<div id="customer_fields" style="display: none;">
@@ -1299,10 +1345,102 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		}
 
 		// Initialize custom customer search functionality
-		function initializeCustomerSearch() {
-			var searchTimeout;
-			var currentCustomers = [];
-			var selectedCustomer = null;
+                function initializeCustomerSearch() {
+                        var searchTimeout;
+                        var currentCustomers = [];
+                        var selectedCustomer = null;
+
+                        var previousNotesMessages = {
+                                'default': '<?php echo addslashes(p__("appointmentpro", 'Select a customer to view previous notes.')); ?>',
+                                'loading': '<?php echo addslashes(p__("appointmentpro", 'Loading previous notes...')); ?>',
+                                'empty': '<?php echo addslashes(p__("appointmentpro", 'No previous notes found.')); ?>',
+                                'error': '<?php echo addslashes(p__("appointmentpro", 'Unable to load previous notes.')); ?>'
+                        };
+
+                        var previousNotesSelectors = {
+                                container: $('#calendar_previous_notes'),
+                                message: $('#calendar_previous_notes_message'),
+                                list: $('#calendar_previous_notes_list')
+                        };
+
+                        function resetModalPreviousNotes(message) {
+                                previousNotesSelectors.container.removeClass('has-notes');
+                                previousNotesSelectors.list.empty();
+                                previousNotesSelectors.message.text(message).show();
+                        }
+
+                        function renderModalPreviousNotes(notes) {
+                                previousNotesSelectors.list.empty();
+
+                                if (!notes || !notes.length) {
+                                        resetModalPreviousNotes(previousNotesMessages.empty);
+                                        return;
+                                }
+
+                                previousNotesSelectors.container.addClass('has-notes');
+                                previousNotesSelectors.message.hide();
+
+                                $.each(notes, function(index, note) {
+                                        var $item = $('<li class="previous-note-item"></li>');
+                                        var metaParts = [];
+
+                                        if (note.appointment_date) {
+                                                metaParts.push(note.appointment_date);
+                                        }
+
+                                        if (note.service_name) {
+                                                metaParts.push(note.service_name);
+                                        }
+
+                                        if (note.status) {
+                                                metaParts.push(note.status);
+                                        }
+
+                                        if (!note.appointment_date && note.created_at) {
+                                                metaParts.push(note.created_at);
+                                        }
+
+                                        if (metaParts.length) {
+                                                $item.append('<div class="previous-note-meta">' + metaParts.join(' · ') + '</div>');
+                                        }
+
+                                        var $noteText = $('<div class="previous-note-text"></div>').text(note.note);
+                                        $item.append($noteText);
+                                        previousNotesSelectors.list.append($item);
+                                });
+                        }
+
+                        function fetchModalCustomerNotes(customerId) {
+                                if (!customerId) {
+                                        resetModalPreviousNotes(previousNotesMessages.default);
+                                        return;
+                                }
+
+                                previousNotesSelectors.container.removeClass('has-notes');
+                                previousNotesSelectors.list.empty();
+                                previousNotesSelectors.message.text(previousNotesMessages.loading).show();
+
+                                $.ajax({
+                                        url: '/appointmentpro/booking/get-customer-notes',
+                                        type: 'POST',
+                                        dataType: 'json',
+                                        data: {
+                                                customer_id: customerId
+                                        },
+                                        success: function(response) {
+                                                if (response && response.success) {
+                                                        renderModalPreviousNotes(response.notes || []);
+                                                } else {
+                                                        resetModalPreviousNotes(previousNotesMessages.error);
+                                                }
+                                        },
+                                        error: function() {
+                                                resetModalPreviousNotes(previousNotesMessages.error);
+                                        }
+                                });
+                        }
+
+                        resetModalPreviousNotes(previousNotesMessages.default);
 
 			// Handle input changes with debouncing
 			$('#customer_search').bind('keyup', function() {
@@ -1506,12 +1644,14 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				$('#customer_firstname').val(firstName);
 				$('#customer_lastname').val(lastName);
 				$('#customer_email').val(email);
-				$('#customer_phone').val(phone);
+                                $('#customer_phone').val(phone);
 
-				// Show customer input fields so user can see/edit the selected customer data
-				$('.customer_inputs').show();
+                                // Show customer input fields so user can see/edit the selected customer data
+                                $('.customer_inputs').show();
 
-				console.log('Customer fields populated and shown');
+                                fetchModalCustomerNotes(customerId);
+
+                                console.log('Customer fields populated and shown');
 
 				// Verify fields are actually populated
 				setTimeout(function() {
@@ -1536,10 +1676,11 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				$('#customer_firstname').val('');
 				$('#customer_lastname').val('');
 				$('#customer_email').val('');
-				$('#customer_phone').val('');
-				$('.customer_inputs').show();
-				console.log('New customer inputs shown');
-			}
+                                $('#customer_phone').val('');
+                                $('.customer_inputs').show();
+                                fetchModalCustomerNotes(null);
+                                console.log('New customer inputs shown');
+                        }
 
 			// Load initial customers when customer tab is opened
 			function loadInitialCustomers() {
@@ -2124,15 +2265,19 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			$('#new_appointment_form')[0].reset();
 			$('#selected_customer_id').val('');
 			$('#customer_id').val(0); // Reset to 0 for new customer
-			$('#customer_search').val(''); // Reset custom customer search
-			$('#customer_search_results').hide(); // Hide search results
-			$('.customer_inputs').hide();
-			$('#service_price').text('-');
-			$('#service_duration').text('-');
+                        $('#customer_search').val(''); // Reset custom customer search
+                        $('#customer_search_results').hide(); // Hide search results
+                        $('.customer_inputs').hide();
+                        $('#service_price').text('-');
+                        $('#service_duration').text('-');
 
-			// Reset selected time slot display
-			$('#selected_start_time').text('-');
-			$('#selected_end_time').text('-');
+                        $('#calendar_previous_notes_list').empty();
+                        $('#calendar_previous_notes_message').text('<?php echo p__("appointmentpro", "Select a customer to view previous notes."); ?>').show();
+                        $('#calendar_previous_notes').removeClass('has-notes');
+
+                        // Reset selected time slot display
+                        $('#selected_start_time').text('-');
+                        $('#selected_end_time').text('-');
 
 			// Reset cascading dropdowns to initial state
 			$('#appointment_provider').attr('disabled', true).empty().append('<option value="">First select a location</option>');
