@@ -32,9 +32,10 @@ $services = $this->getServices();
                                                     </div>
                                                     <!-- services -->
                                                     <div class="col-md-2">
-                                                        <select class="input-flat dt-search color-blue" name="service_id" id="service_id" data-dynatable-query="service_id">
+                                                    <select class="input-flat dt-search color-blue" name="service_id" id="service_id" data-dynatable-query="service_id">
                                                             <!-- <option value="all"><?php echo p__("appointmentpro", 'Select Service'); ?></option> -->
 
+                                                            <option value="all" selected><?php echo p__("appointmentpro", 'All Services'); ?></option>
                                                             <?php foreach ($services as $key => $value) { ?>
                                                                 <option value="<?php echo $value->getId(); ?>"><?php echo $value->getName(); ?></option>
                                                             <?php } ?>
@@ -202,6 +203,15 @@ $services = $this->getServices();
     });
 
     let tableCustomers = $('#dynamic-location');
+    const $customerSelect = $('#customer_id');
+    const $serviceSelect = $('#service_id');
+
+    const defaultCustomerOption = $customerSelect.find('option:first');
+    if (defaultCustomerOption.length) {
+        $customerSelect.val(defaultCustomerOption.val());
+    }
+
+    $serviceSelect.val('all');
 
     tableCustomers.bind('dynatable:preinit', function(e, dynatable) {
         dynatable.utility.textTransform.noStyle = function(text) {
@@ -356,46 +366,66 @@ $services = $this->getServices();
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     $(document).ready(function() {
-        // Sort the options alphabetically
-        $('#customer_id').each(function() {
-            var select = $(this);
-            var options = select.find('option');
-            var allOption = options.filter(function() {
-                return this.value === 'all';
-            });
-
-            options = options.filter(function() {
-                return this.value !== 'all';
-            }).sort(function(a, b) {
+        // Sort the customer options alphabetically
+        $customerSelect.each(function() {
+            const select = $(this);
+            const options = select.find('option').sort(function(a, b) {
                 if (a.text.toLowerCase() > b.text.toLowerCase()) return 1;
                 if (a.text.toLowerCase() < b.text.toLowerCase()) return -1;
                 return 0;
             });
 
-            select.empty().append(allOption).append(options);
+            select.empty().append(options);
         });
 
-        // Set "All" option as selected by default
-        $('#customer_id').val('all').select2({
+        const firstCustomerOption = $customerSelect.find('option:first');
+        let defaultCustomerId = '';
+        if (firstCustomerOption.length) {
+            defaultCustomerId = firstCustomerOption.val();
+            $customerSelect.val(defaultCustomerId);
+        }
+
+        $customerSelect.select2({
             language: {
                 noResults: function() {
                     return "<?php echo P__("appointmentpro", "No results found") ?>";
                 }
             }
         });
-        $('#service_id').select2({
+
+        $serviceSelect.val('all').select2({
             language: {
                 noResults: function() {
                     return "<?php echo P__("appointmentpro", "No results found") ?>";
                 }
             }
         });
+
+        const dynatableInstance = tableCustomers.data('dynatable');
+        if (dynatableInstance) {
+            if (defaultCustomerId) {
+                dynatableInstance.queries.add('customer_id', defaultCustomerId);
+            }
+            dynatableInstance.queries.add('service_id', $serviceSelect.val());
+            dynatableInstance.process();
+        }
+
         // resetFilter
         $('#resetFilter').click(function() {
-            $('#customer_id').val('all').trigger('change');
-            $('#service_id').val('all').trigger('change');
-            $('#dynamic-location').dynatable().data('dynatable').queries = {};
-            $('#dynamic-location').dynatable().data('dynatable').process();
+            if (!dynatableInstance) {
+                return;
+            }
+
+            dynatableInstance.queries = {};
+
+            if (defaultCustomerId) {
+                $customerSelect.val(defaultCustomerId).trigger('change');
+            } else {
+                $customerSelect.trigger('change');
+            }
+
+            $serviceSelect.val('all').trigger('change');
+            dynatableInstance.process();
         });
     });
 </script>
