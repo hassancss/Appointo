@@ -24,7 +24,7 @@ $services = $this->getServices();
                                                 <div id="row">
                                                     <div class="col-md-2">
                                                         <select class="input-flat dt-search color-blue" name="customer_id" id="customer_id" data-dynatable-query="customer_id">
-                                                            <!-- <option value="all"><?php echo p__("appointmentpro", 'Select Customer'); ?></option> -->
+                                                            <option value=""><?php echo p__("appointmentpro", 'Select Customer'); ?></option>
                                                             <?php foreach ($customers as $key => $value) { ?>
                                                                 <option value="<?php echo $value->getId(); ?>"><?php echo $value->getFirstname() . ' (' . $value->getEmail() . ')'; ?></option>
                                                             <?php } ?>
@@ -33,7 +33,7 @@ $services = $this->getServices();
                                                     <!-- services -->
                                                     <div class="col-md-2">
                                                         <select class="input-flat dt-search color-blue" name="service_id" id="service_id" data-dynatable-query="service_id">
-                                                            <!-- <option value="all"><?php echo p__("appointmentpro", 'Select Service'); ?></option> -->
+                                                            <option value=""><?php echo p__("appointmentpro", 'Select Service'); ?></option>
 
                                                             <?php foreach ($services as $key => $value) { ?>
                                                                 <option value="<?php echo $value->getId(); ?>"><?php echo $value->getName(); ?></option>
@@ -360,40 +360,50 @@ $services = $this->getServices();
         $('#customer_id').each(function() {
             var select = $(this);
             var options = select.find('option');
-            var allOption = options.filter(function() {
-                return this.value === 'all';
-            });
+            var placeholderOption = options.filter(function() {
+                return !this.value;
+            }).first();
 
             options = options.filter(function() {
-                return this.value !== 'all';
+                return this.value;
             }).sort(function(a, b) {
                 if (a.text.toLowerCase() > b.text.toLowerCase()) return 1;
                 if (a.text.toLowerCase() < b.text.toLowerCase()) return -1;
                 return 0;
             });
 
-            select.empty().append(allOption).append(options);
+            select.empty();
+
+            if (placeholderOption.length) {
+                select.append(placeholderOption);
+            }
+
+            select.append(options);
         });
 
-        // Set "All" option as selected by default
-        $('#customer_id').val('all').select2({
+        $('#customer_id').select2({
+            placeholder: "<?php echo P__("appointmentpro", "Select Customer") ?>",
+            allowClear: true,
             language: {
                 noResults: function() {
                     return "<?php echo P__("appointmentpro", "No results found") ?>";
                 }
             }
-        });
+        }).val('').trigger('change');
+
         $('#service_id').select2({
+            placeholder: "<?php echo P__("appointmentpro", "Select Service") ?>",
+            allowClear: true,
             language: {
                 noResults: function() {
                     return "<?php echo P__("appointmentpro", "No results found") ?>";
                 }
             }
-        });
+        }).val('').trigger('change');
         // resetFilter
         $('#resetFilter').click(function() {
-            $('#customer_id').val('all').trigger('change');
-            $('#service_id').val('all').trigger('change');
+            $('#customer_id').val('').trigger('change');
+            $('#service_id').val('').trigger('change');
             $('#dynamic-location').dynatable().data('dynatable').queries = {};
             $('#dynamic-location').dynatable().data('dynatable').process();
         });
