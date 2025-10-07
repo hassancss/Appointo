@@ -96,6 +96,108 @@ class Appointmentpro_BookingController extends Application_Controller_Default
     }
 
     /**
+     * Get previous notes for a selected customer
+     */
+    public function getCustomerNotesAction()
+    {
+        try {
+            $customerId = (int) $this->getRequest()->getParam('customer_id');
+            $limit = (int) $this->getRequest()->getParam('limit', 5);
+
+            if ($customerId <= 0) {
+                $this->_sendJson([
+                    'success' => true,
+                    'notes' => []
+                ]);
+                return;
+            }
+
+            $valueId = Appointmentpro_Model_Appointmentpro::getCurrentValueId();
+            if ($valueId) {
+                $valueId = (int) $valueId;
+            } else {
+                $valueId = (int) $this->getRequest()->getParam('value_id');
+            }
+
+            if (!$valueId) {
+                throw new Exception(p__("appointmentpro", 'Unable to determine the current application.'));
+            }
+
+            if ($limit <= 0) {
+                $limit = 5;
+            }
+
+            $bookingModel = new Appointmentpro_Model_Booking();
+            $notes = $bookingModel->getNotesByCustomer($valueId, $customerId, $limit);
+
+            $notesData = [];
+            foreach ($notes as $note) {
+                $noteText = isset($note['notes']) ? trim($note['notes']) : '';
+                if ($noteText === '') {
+                    continue;
+                }
+
+                $dateTimestamp = null;
+                if (!empty($note['appointment_date']) && is_numeric($note['appointment_date'])) {
+                    $dateTimestamp = (int) $note['appointment_date'];
+                }
+
+                if (!$dateTimestamp && !empty($note['created_at'])) {
+                    $createdAt = strtotime($note['created_at']);
+                    if ($createdAt !== false) {
+                        $dateTimestamp = $createdAt;
+                    }
+                }
+
+                $timeLabel = '';
+                if (!empty($note['appointment_time'])) {
+                    if (is_numeric($note['appointment_time'])) {
+                        $timeLabel = date('h:i A', (int) $note['appointment_time']);
+                    } else {
+                        $timeTimestamp = strtotime($note['appointment_time']);
+                        if ($timeTimestamp !== false) {
+                            $timeLabel = date('h:i A', $timeTimestamp);
+                        } else {
+                            $timeLabel = (string) $note['appointment_time'];
+                        }
+                    }
+                } elseif ($dateTimestamp) {
+                    $timeLabel = date('h:i A', $dateTimestamp);
+                }
+
+                $dateLabel = '';
+                if ($dateTimestamp) {
+                    $formattedDate = date('M d, Y', $dateTimestamp);
+                    if ($timeLabel) {
+                        $dateLabel = sprintf(p__("appointmentpro", 'Added on %s at %s'), $formattedDate, $timeLabel);
+                    } else {
+                        $dateLabel = sprintf(p__("appointmentpro", 'Added on %s'), $formattedDate);
+                    }
+                }
+
+                $notesData[] = [
+                    'appointment_id' => (int) $note['appointment_id'],
+                    'note' => $noteText,
+                    'date_label' => $dateLabel,
+                ];
+            }
+
+            $payload = [
+                'success' => true,
+                'notes' => $notesData
+            ];
+        } catch (\Exception $e) {
+            $payload = [
+                'success' => false,
+                'error' => true,
+                'message' => $e->getMessage(),
+            ];
+        }
+
+        $this->_sendJson($payload);
+    }
+
+    /**
      * Get form data for new appointment modal
      */
     public function getFormDataAction()

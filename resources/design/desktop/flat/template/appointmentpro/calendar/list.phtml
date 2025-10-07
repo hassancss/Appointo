@@ -429,15 +429,13 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					</select>
 				</div>
 			</div>
-			<div class="alert alert-warning" role="alert" bis_skin_checked="1">
-				<?php echo p__("appointmentpro", "Please select a customer to see his/her previous NOTES"); ?>
-			</div>
-			<div class="form-row">
-				<div class="form-group col-md-12">
-					<label for="appointment_note"><?php echo p__("appointmentpro", "Note"); ?></label>
-					<textarea id="appointment_note" name="note" class="form-control" rows="3" placeholder="<?php echo p__("appointmentpro", "Enter a Note"); ?>"></textarea>
-				</div>
-			</div>
+                        <div class="form-row">
+                                <div class="form-group col-md-12">
+                                        <label for="appointment_note"><?php echo p__("appointmentpro", "Note"); ?></label>
+                                        <textarea id="appointment_note" name="note" class="form-control" rows="3" placeholder="<?php echo p__("appointmentpro", "Enter a Note"); ?>"></textarea>
+                                </div>
+                        </div>
+                        <div id="customer_previous_notes" class="customer-previous-notes mt-2"></div>
 
 			<!-- Customer fields (initially hidden) -->
 			<div id="customer_fields" style="display: none;">
@@ -1350,10 +1348,90 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		}
 
 		// Initialize custom customer search functionality
-		function initializeCustomerSearch() {
-			var searchTimeout;
-			var currentCustomers = [];
-			var selectedCustomer = null;
+                function initializeCustomerSearch() {
+                        var searchTimeout;
+                        var currentCustomers = [];
+                        var selectedCustomer = null;
+
+                        var notesContainer = $('#customer_previous_notes');
+                        var notesMessages = {
+                                selectCustomer: "<?php echo addslashes(p__('appointmentpro', 'Select a customer to view previous notes.')); ?>",
+                                loading: "<?php echo addslashes(p__('appointmentpro', 'Loading previous notes...')); ?>",
+                                none: "<?php echo addslashes(p__('appointmentpro', 'No previous notes for this customer.')); ?>",
+                                error: "<?php echo addslashes(p__('appointmentpro', 'Unable to load previous notes.')); ?>"
+                        };
+
+                        function showCustomerNotesMessage(message, type) {
+                                var alertType = type || 'info';
+                                var alertElement = $('<div></div>')
+                                        .addClass('alert mb-0 alert-' + alertType)
+                                        .attr('role', 'alert')
+                                        .text(message);
+
+                                notesContainer.empty().append(alertElement);
+                        }
+
+                        function renderCustomerNotes(notes) {
+                                notesContainer.empty();
+
+                                var listWrapper = $('<div></div>').addClass('card shadow-sm');
+                                var listGroup = $('<ul></ul>').addClass('list-group list-group-flush');
+
+                                $.each(notes, function(index, note) {
+                                        var listItem = $('<li></li>').addClass('list-group-item');
+                                        listItem.append($('<div></div>').addClass('note-text').text(note.note));
+
+                                        if (note.date_label) {
+                                                listItem.append($('<div></div>').addClass('small text-muted mt-1').text(note.date_label));
+                                        }
+
+                                        listGroup.append(listItem);
+                                });
+
+                                listWrapper.append(listGroup);
+                                notesContainer.append(listWrapper);
+                        }
+
+                        function fetchCustomerNotes(customerId) {
+                                if (!customerId) {
+                                        resetCustomerNotes();
+                                        return;
+                                }
+
+                                showCustomerNotesMessage(notesMessages.loading, 'info');
+
+                                $.ajax({
+                                        url: '/appointmentpro/booking/get-customer-notes',
+                                        type: 'POST',
+                                        dataType: 'json',
+                                        data: {
+                                                customer_id: customerId
+                                        },
+                                        success: function(response) {
+                                                if (response && response.success) {
+                                                        if (response.notes && response.notes.length > 0) {
+                                                                renderCustomerNotes(response.notes);
+                                                        } else {
+                                                                showCustomerNotesMessage(notesMessages.none, 'secondary');
+                                                        }
+                                                } else {
+                                                        console.error('Unexpected response when loading customer notes:', response);
+                                                        showCustomerNotesMessage(notesMessages.error, 'danger');
+                                                }
+                                        },
+                                        error: function(xhr, status, error) {
+                                                console.error('Error fetching customer notes:', status, error);
+                                                console.error('Response:', xhr.responseText);
+                                                showCustomerNotesMessage(notesMessages.error, 'danger');
+                                        }
+                                });
+                        }
+
+                        function resetCustomerNotes() {
+                                showCustomerNotesMessage(notesMessages.selectCustomer, 'info');
+                        }
+
+                        resetCustomerNotes();
 
 			// Handle input changes with debouncing
 			$('#customer_search').bind('keyup', function() {
@@ -1364,12 +1442,12 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					clearTimeout(searchTimeout);
 				}
 
-				// If empty, show new customer inputs and hide results
-				if (searchTerm === '') {
-					$('#customer_search_results').hide();
-					showNewCustomerInputs();
-					return;
-				}
+                                // If empty, show new customer inputs and hide results
+                                if (searchTerm === '') {
+                                        $('#customer_search_results').hide();
+                                        showNewCustomerInputs();
+                                        return;
+                                }
 
 				// Debounce search
 				searchTimeout = setTimeout(function() {
@@ -1445,7 +1523,7 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				$.each(customers, function(index, customer) {
 					console.log('Processing customer:', customer);
 
-					// Parse the API response format: "Name (email@domain.com)"
+                                        // Parse the API response format: "Name (email@domain.com)"
 					var customerText = customer.text || '';
 					var customerEmail = customer.email || '';
 					var customerId = customer.id || '';
@@ -1491,9 +1569,9 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					};
 
 					// Handle clicking on a result
-					resultItem.bind('click', function() {
-						selectCustomer(customerData);
-					});
+                                        resultItem.bind('click', function() {
+                                                selectCustomer(customerData);
+                                        });
 
 					resultsContainer.append(resultItem);
 				});
@@ -1511,7 +1589,7 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			}
 
 			// Function to select a customer
-			function selectCustomer(customer) {
+                        function selectCustomer(customer) {
 				console.log('Selecting customer:', customer);
 				selectedCustomer = customer;
 
@@ -1565,18 +1643,24 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				console.log('Customer fields populated and shown');
 
 				// Verify fields are actually populated
-				setTimeout(function() {
-					console.log('Verification - Field values after population:', {
-						'selected_customer_id': $('#selected_customer_id').val(),
-						'customer_id': $('#customer_id').val(),
-						'firstname': $('#customer_firstname').val(),
-						'lastname': $('#customer_lastname').val(),
-						'email': $('#customer_email').val(),
-						'phone': $('#customer_phone').val(),
-						'inputs_visible': $('.customer_inputs').is(':visible')
-					});
-				}, 100);
-			}
+                                setTimeout(function() {
+                                        console.log('Verification - Field values after population:', {
+                                                'selected_customer_id': $('#selected_customer_id').val(),
+                                                'customer_id': $('#customer_id').val(),
+                                                'firstname': $('#customer_firstname').val(),
+                                                'lastname': $('#customer_lastname').val(),
+                                                'email': $('#customer_email').val(),
+                                                'phone': $('#customer_phone').val(),
+                                                'inputs_visible': $('.customer_inputs').is(':visible')
+                                        });
+                                }, 100);
+
+                                if (customerId) {
+                                        fetchCustomerNotes(customerId);
+                                } else {
+                                        resetCustomerNotes();
+                                }
+                        }
 
 			// Function to show new customer input fields
 			function showNewCustomerInputs() {
@@ -1587,10 +1671,12 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				$('#customer_firstname').val('');
 				$('#customer_lastname').val('');
 				$('#customer_email').val('');
-				$('#customer_phone').val('');
-				$('.customer_inputs').show();
-				console.log('New customer inputs shown');
-			}
+                                $('#customer_phone').val('');
+                                $('.customer_inputs').show();
+                                console.log('New customer inputs shown');
+
+                                resetCustomerNotes();
+                        }
 
 			// Load initial customers when customer tab is opened
 			function loadInitialCustomers() {
