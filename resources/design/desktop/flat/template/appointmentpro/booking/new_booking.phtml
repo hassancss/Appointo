@@ -235,6 +235,20 @@ $gateways = (new Appointmentpro_Model_Gateways())->findAll(['value_id' => $value
                               </div>
                               <div class="form-group">
                                 <div class="col-sm-4">
+                                  <label class="control-label">
+                                    <?php echo p__("appointmentpro", 'Previous Notes'); ?></label>
+                                </div>
+                                <div class="col-sm-8">
+                                  <div id="customer_previous_notes" class="customer-notes-container">
+                                    <div class="alert alert-info mb-0" role="alert">
+                                      <?php echo p__("appointmentpro", 'Select a customer to view previous notes.'); ?>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div class="form-group">
+                                <div class="col-sm-4">
                                   <label for="customer_id" class="control-label">
                                     <?php echo p__("appointmentpro", 'Search Customer'); ?><span>*</span></label>
                                 </div>
@@ -685,11 +699,100 @@ $gateways = (new Appointmentpro_Model_Gateways())->findAll(['value_id' => $value
     margin-right: 0px;
     margin-left: 0px;
   }
+
+  .customer-notes-container .card {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  }
+
+  .customer-notes-container .list-group-item {
+    border-color: #eee;
+  }
 </style>
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
   $(document).ready(function() {
+    var notesContainer = $('#customer_previous_notes');
+    var notesMessages = {
+      selectCustomer: "<?php echo addslashes(p__('appointmentpro', 'Select a customer to view previous notes.')); ?>",
+      loading: "<?php echo addslashes(p__('appointmentpro', 'Loading previous notes...')); ?>",
+      none: "<?php echo addslashes(p__('appointmentpro', 'No previous notes for this customer.')); ?>",
+      error: "<?php echo addslashes(p__('appointmentpro', 'Unable to load previous notes.')); ?>"
+    };
+
+    function showCustomerNotesMessage(message, type) {
+      var alertType = type || 'info';
+      var alertElement = $('<div></div>')
+        .addClass('alert mb-0 alert-' + alertType)
+        .attr('role', 'alert')
+        .text(message);
+
+      notesContainer.empty().append(alertElement);
+    }
+
+    function renderCustomerNotes(notes) {
+      notesContainer.empty();
+
+      var listWrapper = $('<div></div>').addClass('card shadow-sm');
+      var listGroup = $('<ul></ul>').addClass('list-group list-group-flush');
+
+      $.each(notes, function(index, note) {
+        var listItem = $('<li></li>').addClass('list-group-item');
+        listItem.append($('<div></div>').addClass('note-text').text(note.note));
+
+        if (note.date_label) {
+          listItem.append($('<div></div>').addClass('small text-muted mt-1').text(note.date_label));
+        }
+
+        listGroup.append(listItem);
+      });
+
+      listWrapper.append(listGroup);
+      notesContainer.append(listWrapper);
+    }
+
+    function resetCustomerNotes() {
+      showCustomerNotesMessage(notesMessages.selectCustomer, 'info');
+    }
+
+    function fetchCustomerNotes(customerId) {
+      if (!customerId) {
+        resetCustomerNotes();
+        return;
+      }
+
+      showCustomerNotesMessage(notesMessages.loading, 'info');
+
+      $.ajax({
+        url: '<?php echo $this->getUrl('appointmentpro/booking/get-customer-notes'); ?>',
+        type: 'POST',
+        dataType: 'json',
+        data: {
+          customer_id: customerId
+        },
+        success: function(response) {
+          if (response && response.success) {
+            if (response.notes && response.notes.length > 0) {
+              renderCustomerNotes(response.notes);
+            } else {
+              showCustomerNotesMessage(notesMessages.none, 'secondary');
+            }
+          } else {
+            console.error('Unexpected response when loading customer notes:', response);
+            showCustomerNotesMessage(notesMessages.error, 'danger');
+          }
+        },
+        error: function(xhr, status, error) {
+          console.error('Error fetching customer notes:', status, error);
+          console.error('Response:', xhr.responseText);
+          showCustomerNotesMessage(notesMessages.error, 'danger');
+        }
+      });
+    }
+
+    resetCustomerNotes();
+
     $('#customer_id').select2({
       ajax: {
         url: '<?php echo $this->getUrl('appointmentpro/booking/get-customers') ?>', // Replace with your endpoint URL
@@ -723,10 +826,20 @@ $gateways = (new Appointmentpro_Model_Gateways())->findAll(['value_id' => $value
 
     $('#customer_id').on('change', function() {
       var selectedId = $(this).val();
-      var selectedCustomer = $('#customer_id').select2('data')[0];
-      console.log('Selected customer ID:', selectedId);
-      console.log('Selected customer object:', selectedCustomer);
-      $('#customer_email').val(selectedCustomer.email).trigger('input');
+      var customerData = $('#customer_id').select2('data');
+      var selectedCustomer = customerData && customerData.length ? customerData[0] : null;
+
+      if (selectedCustomer && selectedCustomer.email) {
+        $('#customer_email').val(selectedCustomer.email).trigger('input');
+      } else {
+        $('#customer_email').val('').trigger('input');
+      }
+
+      if (selectedId) {
+        fetchCustomerNotes(selectedId);
+      } else {
+        resetCustomerNotes();
+      }
 
       // You can add additional logic here to handle the selected customer object
     });
