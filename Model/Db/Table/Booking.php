@@ -861,6 +861,38 @@ class Appointmentpro_Model_Db_Table_Booking extends Core_Model_Db_Table
     }
 
     /**
+     * Get recent notes for a specific customer
+     *
+     * @param int $valueId
+     * @param int $customerId
+     * @param int $limit
+     * @return array
+     */
+    public function getNotesByCustomer($valueId, $customerId, $limit = 5)
+    {
+        $select = $this->_db->select()
+            ->from(['a' => $this->_name], [
+                'a.appointment_id',
+                'a.notes',
+                'a.appointment_date',
+                'a.appointment_time',
+                'a.created_at'
+            ])
+            ->where('a.value_id = ?', $valueId)
+            ->where('a.customer_id = ?', $customerId)
+            ->where('a.is_delete = ?', 0)
+            ->where('a.notes IS NOT NULL')
+            ->where('a.notes != ?', '')
+            ->order('a.appointment_date DESC');
+
+        if ($limit > 0) {
+            $select->limit((int) $limit);
+        }
+
+        return $this->_db->fetchAll($select);
+    }
+
+    /**
      * @param $value_id
      */
     public function countAllForApp($value_id, $params = [])

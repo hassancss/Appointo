@@ -63,6 +63,17 @@ class Appointmentpro_Model_Booking extends Core_Model_Default
     }
 
     /**
+     * @param int $valueId
+     * @param int $customerId
+     * @param int $limit
+     * @return array
+     */
+    public function getNotesByCustomer($valueId, $customerId, $limit = 5)
+    {
+        return $this->getTable()->getNotesByCustomer($valueId, $customerId, $limit);
+    }
+
+    /**
      * @param $valuesId
      * @param array $params
      * @return Appointmentpro_Model_Booking[]
