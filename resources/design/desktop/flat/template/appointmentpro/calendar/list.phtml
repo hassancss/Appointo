@@ -901,14 +901,62 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				// }
 
 			},
-			eventNew: function(calEvent, $event) {
-				console.log('eventNew triggered!', calEvent);
+                    eventNew: function(calEvent, $event, freeBusyManager, calendarElement, originalEvent) {
+                        console.log('eventNew triggered!', calEvent);
 
-				// Check for overlaps with existing events
-				var hasOverlap = checkEventOverlap(calEvent);
-				if (hasOverlap) {
-					console.log('Overlap detected, preventing event creation');
-					alert('This time slot is already booked. Please choose a different time.');
+                        // Adjust the newly created event so it lines up with the exact
+                        // click/touch position on the calendar grid. The stock
+                        // weekCalendar implementation snaps to the top of the slot
+                        // that contains the click which can visually shift the
+                        // appointment several minutes earlier than expected. By
+                        // recalculating the slot index from the raw pointer position
+                        // we ensure the booking block always matches the user input.
+                        if (originalEvent) {
+                                var $column = $(originalEvent.target).closest('.wc-day-column-inner');
+                                if ($column.length) {
+                                        var calendarOptions = $calendar.weekCalendar('option') || {};
+                                        var slotHeight = calendarOptions.timeslotHeight || 30;
+                                        var slotsPerHour = calendarOptions.timeslotsPerHour || 12;
+                                        var businessHours = calendarOptions.businessHours || {};
+                                        var usesBusinessHours = !!businessHours.limitDisplay;
+                                        var businessStartHour = usesBusinessHours ? (businessHours.start || 0) : 0;
+                                        var minutesPerSlot = 60 / slotsPerHour;
+                                        var millisPerSlot = minutesPerSlot * 60 * 1000;
+                                        var eventDurationMillis = calEvent.end.getTime() - calEvent.start.getTime();
+
+                                        // Determine the cursor position inside the column, compensating
+                                        // for any scroll offset inside the time grid.
+                                        var columnOffsetTop = $column.offset().top;
+                                        var scrollTop = $column.closest('.wc-scrollable-grid').scrollTop() || 0;
+                                        var relativeY = originalEvent.pageY - columnOffsetTop + scrollTop;
+
+                                        // Snap to the closest slot rather than always rounding down.
+                                        var rawSlotIndex = Math.floor((relativeY + (slotHeight / 2)) / slotHeight);
+
+                                        var totalHoursDisplayed = usesBusinessHours ? (businessHours.end - businessStartHour) : 24;
+                                        var totalSlots = Math.max(1, Math.round(totalHoursDisplayed * slotsPerHour));
+                                        var eventSlotLength = Math.max(1, Math.round(eventDurationMillis / millisPerSlot));
+                                        var maxSlotIndex = Math.max(0, totalSlots - eventSlotLength);
+                                        var slotIndex = Math.min(Math.max(rawSlotIndex, 0), maxSlotIndex);
+
+                                        var baseDate = new Date($column.data('startDate').getTime());
+                                        baseDate.setHours(0, 0, 0, 0);
+                                        var startDate = new Date(baseDate.getTime() + (businessStartHour * 60 * 60 * 1000) + (slotIndex * millisPerSlot));
+                                        var endDate = new Date(startDate.getTime() + eventDurationMillis);
+
+                                        calEvent.start = startDate;
+                                        calEvent.end = endDate;
+
+                                        $event.css('top', slotIndex * slotHeight);
+                                        $event.data('calEvent', calEvent);
+                                }
+                        }
+
+                        // Check for overlaps with existing events
+                        var hasOverlap = checkEventOverlap(calEvent);
+                        if (hasOverlap) {
+                                console.log('Overlap detected, preventing event creation');
+                                alert('This time slot is already booked. Please choose a different time.');
 					$('#calendar').weekCalendar("removeUnsavedEvents");
 					return false;
 				}
