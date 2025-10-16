@@ -94,6 +94,25 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		box-shadow: 0 0 0 0.2rem rgba(23, 162, 184, 0.25);
 	}
 
+	/* Disabled dropdown styling - keep readable */
+	.form-control:disabled,
+	.form-control[disabled] {
+		background-color: #f0f0f0;
+		color: #333333;
+		cursor: not-allowed;
+		border-color: #b0b0b0;
+		opacity: 1;
+		/* Override default opacity */
+		-webkit-text-fill-color: #333333;
+		/* For Safari */
+	}
+
+	select.form-control:disabled,
+	select.form-control[disabled] {
+		background-color: #f0f0f0;
+		color: #333333;
+	}
+
 	.select-flat {
 		appearance: none;
 		background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
@@ -429,13 +448,13 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					</select>
 				</div>
 			</div>
-                        <div class="form-row">
-                                <div class="form-group col-md-12">
-                                        <label for="appointment_note"><?php echo p__("appointmentpro", "Note"); ?></label>
-                                        <textarea id="appointment_note" name="note" class="form-control" rows="3" placeholder="<?php echo p__("appointmentpro", "Enter a Note"); ?>"></textarea>
-                                </div>
-                        </div>
-                        <div id="customer_previous_notes" class="customer-previous-notes mt-2"></div>
+			<div class="form-row">
+				<div class="form-group col-md-12">
+					<label for="appointment_note"><?php echo p__("appointmentpro", "Note"); ?></label>
+					<textarea id="appointment_note" name="note" class="form-control" rows="3" placeholder="<?php echo p__("appointmentpro", "Enter a Note"); ?>"></textarea>
+				</div>
+			</div>
+			<div id="customer_previous_notes" class="customer-previous-notes mt-2"></div>
 
 			<!-- Customer fields (initially hidden) -->
 			<div id="customer_fields" style="display: none;">
@@ -846,15 +865,46 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			},
 			eventRender: function(calEvent, $event) {
 				console.log('calEvent', calEvent, users);
+				console.log('createdSource:', calEvent.createdSource);
+
+				// Add icon to header based on created_source (before time text)
+				var $timeHeader = $event.find('.wc-time.ui-corner-top');
+				console.log('Time header found:', $timeHeader.length);
+
+				if (calEvent.createdSource && $timeHeader.length > 0) {
+					var icon = '';
+					if (calEvent.createdSource === 'app') {
+						icon = '<i class="fa fa-mobile" style="margin-right: 5px; font-size: 12px;" title="Created from Mobile App"></i>';
+						$event.addClass('created-from-app');
+						console.log('Adding mobile icon');
+					} else if (calEvent.createdSource === 'desktop') {
+						icon = '<i class="fa fa-desktop" style="margin-right: 5px; font-size: 12px;" title="Created from Desktop"></i>';
+						$event.addClass('created-from-desktop');
+						console.log('Adding desktop icon');
+					}
+
+					// Prepend icon before the time text
+					if (icon) {
+						var currentHtml = $timeHeader.html();
+						console.log('Current header HTML:', currentHtml);
+						$timeHeader.html(icon + currentHtml);
+						console.log('Icon added!');
+					}
+				} else {
+					console.log('No icon added - createdSource:', calEvent.createdSource, 'header exists:', $timeHeader.length > 0);
+				}
 
 				// Check if provider exists (for existing events) or if it's a new event
 				if (calEvent.provider) {
-					$event.css('backgroundColor', calEvent.provider.calendar_body_bg);
-					$event.css('color', calEvent.provider.calendar_body_color);
+					// Only apply provider colors if NOT using created_source colors
+					if (!calEvent.createdSource) {
+						$event.css('backgroundColor', calEvent.provider.calendar_body_bg);
+						$event.css('color', calEvent.provider.calendar_body_color);
+					}
 
 					// Change the header color based on the event's background color
 					var eventBgColor = $event.css('backgroundColor');
-					$event.find('.wc-time.ui-corner-top').css({
+					$timeHeader.css({
 						'backgroundColor': calEvent.provider.calendar_header_bg,
 						'color': calEvent.provider.calendar_header_color, // Optional: Change text color for better contrast
 					});
@@ -901,62 +951,14 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				// }
 
 			},
-                    eventNew: function(calEvent, $event, freeBusyManager, calendarElement, originalEvent) {
-                        console.log('eventNew triggered!', calEvent);
+			eventNew: function(calEvent, $event) {
+				console.log('eventNew triggered!', calEvent);
 
-                        // Adjust the newly created event so it lines up with the exact
-                        // click/touch position on the calendar grid. The stock
-                        // weekCalendar implementation snaps to the top of the slot
-                        // that contains the click which can visually shift the
-                        // appointment several minutes earlier than expected. By
-                        // recalculating the slot index from the raw pointer position
-                        // we ensure the booking block always matches the user input.
-                        if (originalEvent) {
-                                var $column = $(originalEvent.target).closest('.wc-day-column-inner');
-                                if ($column.length) {
-                                        var calendarOptions = $calendar.weekCalendar('option') || {};
-                                        var slotHeight = calendarOptions.timeslotHeight || 30;
-                                        var slotsPerHour = calendarOptions.timeslotsPerHour || 12;
-                                        var businessHours = calendarOptions.businessHours || {};
-                                        var usesBusinessHours = !!businessHours.limitDisplay;
-                                        var businessStartHour = usesBusinessHours ? (businessHours.start || 0) : 0;
-                                        var minutesPerSlot = 60 / slotsPerHour;
-                                        var millisPerSlot = minutesPerSlot * 60 * 1000;
-                                        var eventDurationMillis = calEvent.end.getTime() - calEvent.start.getTime();
-
-                                        // Determine the cursor position inside the column, compensating
-                                        // for any scroll offset inside the time grid.
-                                        var columnOffsetTop = $column.offset().top;
-                                        var scrollTop = $column.closest('.wc-scrollable-grid').scrollTop() || 0;
-                                        var relativeY = originalEvent.pageY - columnOffsetTop + scrollTop;
-
-                                        // Snap to the closest slot rather than always rounding down.
-                                        var rawSlotIndex = Math.floor((relativeY + (slotHeight / 2)) / slotHeight);
-
-                                        var totalHoursDisplayed = usesBusinessHours ? (businessHours.end - businessStartHour) : 24;
-                                        var totalSlots = Math.max(1, Math.round(totalHoursDisplayed * slotsPerHour));
-                                        var eventSlotLength = Math.max(1, Math.round(eventDurationMillis / millisPerSlot));
-                                        var maxSlotIndex = Math.max(0, totalSlots - eventSlotLength);
-                                        var slotIndex = Math.min(Math.max(rawSlotIndex, 0), maxSlotIndex);
-
-                                        var baseDate = new Date($column.data('startDate').getTime());
-                                        baseDate.setHours(0, 0, 0, 0);
-                                        var startDate = new Date(baseDate.getTime() + (businessStartHour * 60 * 60 * 1000) + (slotIndex * millisPerSlot));
-                                        var endDate = new Date(startDate.getTime() + eventDurationMillis);
-
-                                        calEvent.start = startDate;
-                                        calEvent.end = endDate;
-
-                                        $event.css('top', slotIndex * slotHeight);
-                                        $event.data('calEvent', calEvent);
-                                }
-                        }
-
-                        // Check for overlaps with existing events
-                        var hasOverlap = checkEventOverlap(calEvent);
-                        if (hasOverlap) {
-                                console.log('Overlap detected, preventing event creation');
-                                alert('This time slot is already booked. Please choose a different time.');
+				// Check for overlaps with existing events
+				var hasOverlap = checkEventOverlap(calEvent);
+				if (hasOverlap) {
+					console.log('Overlap detected, preventing event creation');
+					alert('This time slot is already booked. Please choose a different time.');
 					$('#calendar').weekCalendar("removeUnsavedEvents");
 					return false;
 				}
@@ -1054,91 +1056,159 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 
 					console.log('=== END APPOINTMENT BUTTON CLICKED ===');
 
-					// Show the new appointment modal first
-					var $dialogContent = $("#new_appointment_modal");
-					$dialogContent.dialog({
-						modal: true,
-						title: "<?php echo p__("appointmentpro", "NEW APPOINTMENT"); ?>",
-						width: 800,
-						height: 650,
-						open: function() {
-							// Load form data first
-							loadAppointmentFormData();
+					// Store the provider info from calendar event for auto-selection
+					var selectedProviderId = null;
+					if (currentCalEvent.userId !== undefined && providers[currentCalEvent.userId]) {
+						selectedProviderId = providers[currentCalEvent.userId].provider_id;
+						console.log('Provider from calendar slot:', selectedProviderId, 'userId:', currentCalEvent.userId);
+					}
 
-							// Then set the time values after a brief delay to ensure form is loaded
-							setTimeout(function() {
-								console.log('=== SETTING TIME VALUES IN MODAL ===');
+					// Get location from top dropdown
+					var selectedLocationId = $('#location_id').val();
+					console.log('Location from dropdown:', selectedLocationId);
 
-								// Set the date and time in the form
-								$('#appointment_date').val(appointmentDate);
-								$('#appointment_time').val(startTimeForm);
-								$('#appointment_end_time').val(endTimeForm);
+					// Show loading indicator using old SweetAlert syntax
+					swal({
+						title: '<?php echo p__("appointmentpro", "Loading..."); ?>',
+						text: '<?php echo p__("appointmentpro", "Preparing booking form..."); ?>',
+						showConfirmButton: false,
+						allowOutsideClick: false,
+						allowEscapeKey: false
+					});
 
-								// Update selected time slot display (always use 12-hour format for display)
-								$('#selected_start_time').text(startTimeDisplay);
-								$('#selected_end_time').text(endTimeDisplay);
+					// Function to open modal after everything is loaded
+					function openBookingModal() {
+						// Close the loading indicator
+						swal.close();
 
-								console.log('Time values set in modal:', {
-									'appointment_date field': $('#appointment_date').val(),
-									'appointment_time field': $('#appointment_time').val(),
-									'appointment_end_time field': $('#appointment_end_time').val(),
-									'selected_start_time display': $('#selected_start_time').text(),
-									'selected_end_time display': $('#selected_end_time').text()
-								});
-
-								console.log('=== END SETTING TIME VALUES IN MODAL ===');
-							}, 100);
-						},
-						close: function() {
-							$dialogContent.dialog("destroy");
-							$dialogContent.hide();
-							$('#calendar').weekCalendar("removeUnsavedEvents");
-							resetAppointmentForm();
-						},
-						buttons: {
-							"<?php echo p__("appointmentpro", "Next"); ?>": function() {
-								console.log('Next button clicked, starting validation...');
-								var isOnBookingTab = $('.tab-item[data-tab="booking"]').hasClass('active');
-								var dialogInstance = $(this);
-
-								if (isOnBookingTab) {
-									// Validate booking tab fields first
-									var bookingValid = validateBookingFields();
-									if (bookingValid) {
-										// Switch to customer tab
-										switchToCustomerTab();
-										// Update button text
-										$(this).parent().find('button:contains("Next")').text("<?php echo p__("appointmentpro", "Submit"); ?>");
-									}
-								} else {
-									// On customer tab - validate and submit
-									if (validateAppointmentForm()) {
-										console.log('Validation passed, creating appointment...');
-										// Pass the dialog instance to createNewAppointment so it can close the modal on success
-										createNewAppointment(dialogInstance);
-									} else {
-										console.log('Validation failed, form not submitted');
-										// Don't close the dialog - let user fix the validation errors
-									}
-								}
+						var $dialogContent = $("#new_appointment_modal");
+						$dialogContent.dialog({
+							modal: true,
+							title: "<?php echo p__("appointmentpro", "NEW APPOINTMENT"); ?>",
+							width: 800,
+							height: 650,
+							open: function() {
+								console.log('Modal opened with pre-selected values');
 							},
-							"<?php echo p__("appointmentpro", "Back"); ?>": function() {
-								var isOnCustomerTab = $('.tab-item[data-tab="customer"]').hasClass('active');
+							close: function() {
+								$dialogContent.dialog("destroy");
+								$dialogContent.hide();
+								$('#calendar').weekCalendar("removeUnsavedEvents");
+								resetAppointmentForm();
+							},
+							buttons: {
+								"<?php echo p__("appointmentpro", "Next"); ?>": function() {
+									console.log('Next button clicked, starting validation...');
+									var isOnBookingTab = $('.tab-item[data-tab="booking"]').hasClass('active');
+									var dialogInstance = $(this);
 
-								if (isOnCustomerTab) {
-									// Switch back to booking tab
-									$('.tab-item').removeClass('active');
-									$('.tab-item[data-tab="booking"]').addClass('active');
-									$('#customer_fields').hide();
-									// Update button text back to "Next"
-									$(this).parent().find('button:contains("Submit")').text("<?php echo p__("appointmentpro", "Next"); ?>");
-								} else {
-									// Close dialog
-									$(this).dialog("close");
+									if (isOnBookingTab) {
+										// Validate booking tab fields first
+										var bookingValid = validateBookingFields();
+										if (bookingValid) {
+											// Switch to customer tab
+											switchToCustomerTab();
+											// Update button text
+											$(this).parent().find('button:contains("Next")').text("<?php echo p__("appointmentpro", "Submit"); ?>");
+										}
+									} else {
+										// On customer tab - validate and submit
+										if (validateAppointmentForm()) {
+											console.log('Validation passed, creating appointment...');
+											// Pass the dialog instance to createNewAppointment so it can close the modal on success
+											createNewAppointment(dialogInstance);
+										} else {
+											console.log('Validation failed, form not submitted');
+											// Don't close the dialog - let user fix the validation errors
+										}
+									}
+								},
+								"<?php echo p__("appointmentpro", "Back"); ?>": function() {
+									var isOnCustomerTab = $('.tab-item[data-tab="customer"]').hasClass('active');
+
+									if (isOnCustomerTab) {
+										// Switch back to booking tab
+										$('.tab-item').removeClass('active');
+										$('.tab-item[data-tab="booking"]').addClass('active');
+										$('#customer_fields').hide();
+										// Update button text back to "Next"
+										$(this).parent().find('button:contains("Submit")').text("<?php echo p__("appointmentpro", "Next"); ?>");
+									} else {
+										// Close dialog
+										$(this).dialog("close");
+									}
 								}
 							}
+						});
+					}
+
+					// Load form data first, then auto-select in callback
+					loadAppointmentFormData(function() {
+						console.log('Form data loaded, now auto-selecting location and provider');
+
+						// Set the date and time in the form
+						$('#appointment_date').val(appointmentDate);
+						$('#appointment_time').val(startTimeForm);
+						$('#appointment_end_time').val(endTimeForm);
+
+						// Update selected time slot display
+						$('#selected_start_time').text(startTimeDisplay);
+						$('#selected_end_time').text(endTimeDisplay);
+
+						console.log('Time values set');
+
+						// Auto-select location if available
+						if (selectedLocationId) {
+							console.log('Auto-selecting location:', selectedLocationId);
+							console.log('Location options available:', $('#appointment_location option').length);
+
+							$('#appointment_location').val(selectedLocationId);
+							console.log('Location dropdown value after set:', $('#appointment_location').val());
+
+							// Disable location dropdown since it's auto-selected
+							$('#appointment_location').attr('disabled', true);
+							console.log('Location dropdown disabled');
+
+							// Load providers for this location with callback to auto-select provider
+							if (selectedProviderId) {
+								console.log('Will auto-select provider after providers load:', selectedProviderId);
+
+								loadProvidersByLocation(selectedLocationId, function() {
+									console.log('Providers loaded, now auto-selecting provider');
+									console.log('Provider options available:', $('#appointment_provider option').length);
+
+									// Small delay to ensure DOM is updated
+									setTimeout(function() {
+										$('#appointment_provider').val(selectedProviderId);
+										console.log('Provider dropdown value after set:', $('#appointment_provider').val());
+
+										// Disable provider dropdown since it's auto-selected
+										$('#appointment_provider').attr('disabled', true);
+										console.log('Provider dropdown disabled');
+
+										// Trigger change to load services
+										$('#appointment_provider').trigger('change');
+										console.log('Provider auto-selected and services loading');
+
+										// Wait a bit for services to load, then open modal
+										setTimeout(function() {
+											console.log('Everything ready, opening modal now');
+											openBookingModal();
+										}, 300);
+									}, 100);
+								});
+							} else {
+								// Just load providers without auto-selecting, then open modal
+								loadProvidersByLocation(selectedLocationId, function() {
+									console.log('Providers loaded, opening modal');
+									openBookingModal();
+								});
+							}
+						} else {
+							console.log('No location selected, opening modal directly');
+							openBookingModal();
 						}
-					}).show();
+					});
 				});
 
 				// Handle remove button click (specific to this event)
@@ -1363,7 +1433,7 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		}
 
 		// Function to load initial form data (only locations and static data)
-		function loadAppointmentFormData() {
+		function loadAppointmentFormData(callback) {
 			$.ajax({
 				url: '/appointmentpro/booking/get-form-data',
 				type: 'POST',
@@ -1387,6 +1457,12 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 
 						// Initialize custom customer search functionality
 						initializeCustomerSearch();
+
+						// Call callback if provided (for auto-selecting location/provider)
+						if (typeof callback === 'function') {
+							console.log('Calling loadAppointmentFormData callback');
+							callback();
+						}
 					}
 				},
 				error: function() {
@@ -1396,90 +1472,90 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		}
 
 		// Initialize custom customer search functionality
-                function initializeCustomerSearch() {
-                        var searchTimeout;
-                        var currentCustomers = [];
-                        var selectedCustomer = null;
+		function initializeCustomerSearch() {
+			var searchTimeout;
+			var currentCustomers = [];
+			var selectedCustomer = null;
 
-                        var notesContainer = $('#customer_previous_notes');
-                        var notesMessages = {
-                                selectCustomer: "<?php echo addslashes(p__('appointmentpro', 'Select a customer to view previous notes.')); ?>",
-                                loading: "<?php echo addslashes(p__('appointmentpro', 'Loading previous notes...')); ?>",
-                                none: "<?php echo addslashes(p__('appointmentpro', 'No previous notes for this customer.')); ?>",
-                                error: "<?php echo addslashes(p__('appointmentpro', 'Unable to load previous notes.')); ?>"
-                        };
+			var notesContainer = $('#customer_previous_notes');
+			var notesMessages = {
+				selectCustomer: "<?php echo addslashes(p__('appointmentpro', 'Select a customer to view previous notes.')); ?>",
+				loading: "<?php echo addslashes(p__('appointmentpro', 'Loading previous notes...')); ?>",
+				none: "<?php echo addslashes(p__('appointmentpro', 'No previous notes for this customer.')); ?>",
+				error: "<?php echo addslashes(p__('appointmentpro', 'Unable to load previous notes.')); ?>"
+			};
 
-                        function showCustomerNotesMessage(message, type) {
-                                var alertType = type || 'info';
-                                var alertElement = $('<div></div>')
-                                        .addClass('alert mb-0 alert-' + alertType)
-                                        .attr('role', 'alert')
-                                        .text(message);
+			function showCustomerNotesMessage(message, type) {
+				var alertType = type || 'info';
+				var alertElement = $('<div></div>')
+					.addClass('alert mb-0 alert-' + alertType)
+					.attr('role', 'alert')
+					.text(message);
 
-                                notesContainer.empty().append(alertElement);
-                        }
+				notesContainer.empty().append(alertElement);
+			}
 
-                        function renderCustomerNotes(notes) {
-                                notesContainer.empty();
+			function renderCustomerNotes(notes) {
+				notesContainer.empty();
 
-                                var listWrapper = $('<div></div>').addClass('card shadow-sm');
-                                var listGroup = $('<ul></ul>').addClass('list-group list-group-flush');
+				var listWrapper = $('<div></div>').addClass('card shadow-sm');
+				var listGroup = $('<ul></ul>').addClass('list-group list-group-flush');
 
-                                $.each(notes, function(index, note) {
-                                        var listItem = $('<li></li>').addClass('list-group-item');
-                                        listItem.append($('<div></div>').addClass('note-text').text(note.note));
+				$.each(notes, function(index, note) {
+					var listItem = $('<li></li>').addClass('list-group-item');
+					listItem.append($('<div></div>').addClass('note-text').text(note.note));
 
-                                        if (note.date_label) {
-                                                listItem.append($('<div></div>').addClass('small text-muted mt-1').text(note.date_label));
-                                        }
+					if (note.date_label) {
+						listItem.append($('<div></div>').addClass('small text-muted mt-1').text(note.date_label));
+					}
 
-                                        listGroup.append(listItem);
-                                });
+					listGroup.append(listItem);
+				});
 
-                                listWrapper.append(listGroup);
-                                notesContainer.append(listWrapper);
-                        }
+				listWrapper.append(listGroup);
+				notesContainer.append(listWrapper);
+			}
 
-                        function fetchCustomerNotes(customerId) {
-                                if (!customerId) {
-                                        resetCustomerNotes();
-                                        return;
-                                }
+			function fetchCustomerNotes(customerId) {
+				if (!customerId) {
+					resetCustomerNotes();
+					return;
+				}
 
-                                showCustomerNotesMessage(notesMessages.loading, 'info');
+				showCustomerNotesMessage(notesMessages.loading, 'info');
 
-                                $.ajax({
-                                        url: '/appointmentpro/booking/get-customer-notes',
-                                        type: 'POST',
-                                        dataType: 'json',
-                                        data: {
-                                                customer_id: customerId
-                                        },
-                                        success: function(response) {
-                                                if (response && response.success) {
-                                                        if (response.notes && response.notes.length > 0) {
-                                                                renderCustomerNotes(response.notes);
-                                                        } else {
-                                                                showCustomerNotesMessage(notesMessages.none, 'secondary');
-                                                        }
-                                                } else {
-                                                        console.error('Unexpected response when loading customer notes:', response);
-                                                        showCustomerNotesMessage(notesMessages.error, 'danger');
-                                                }
-                                        },
-                                        error: function(xhr, status, error) {
-                                                console.error('Error fetching customer notes:', status, error);
-                                                console.error('Response:', xhr.responseText);
-                                                showCustomerNotesMessage(notesMessages.error, 'danger');
-                                        }
-                                });
-                        }
+				$.ajax({
+					url: '/appointmentpro/booking/get-customer-notes',
+					type: 'POST',
+					dataType: 'json',
+					data: {
+						customer_id: customerId
+					},
+					success: function(response) {
+						if (response && response.success) {
+							if (response.notes && response.notes.length > 0) {
+								renderCustomerNotes(response.notes);
+							} else {
+								showCustomerNotesMessage(notesMessages.none, 'secondary');
+							}
+						} else {
+							console.error('Unexpected response when loading customer notes:', response);
+							showCustomerNotesMessage(notesMessages.error, 'danger');
+						}
+					},
+					error: function(xhr, status, error) {
+						console.error('Error fetching customer notes:', status, error);
+						console.error('Response:', xhr.responseText);
+						showCustomerNotesMessage(notesMessages.error, 'danger');
+					}
+				});
+			}
 
-                        function resetCustomerNotes() {
-                                showCustomerNotesMessage(notesMessages.selectCustomer, 'info');
-                        }
+			function resetCustomerNotes() {
+				showCustomerNotesMessage(notesMessages.selectCustomer, 'info');
+			}
 
-                        resetCustomerNotes();
+			resetCustomerNotes();
 
 			// Handle input changes with debouncing
 			$('#customer_search').bind('keyup', function() {
@@ -1490,12 +1566,12 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					clearTimeout(searchTimeout);
 				}
 
-                                // If empty, show new customer inputs and hide results
-                                if (searchTerm === '') {
-                                        $('#customer_search_results').hide();
-                                        showNewCustomerInputs();
-                                        return;
-                                }
+				// If empty, show new customer inputs and hide results
+				if (searchTerm === '') {
+					$('#customer_search_results').hide();
+					showNewCustomerInputs();
+					return;
+				}
 
 				// Debounce search
 				searchTimeout = setTimeout(function() {
@@ -1571,7 +1647,7 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				$.each(customers, function(index, customer) {
 					console.log('Processing customer:', customer);
 
-                                        // Parse the API response format: "Name (email@domain.com)"
+					// Parse the API response format: "Name (email@domain.com)"
 					var customerText = customer.text || '';
 					var customerEmail = customer.email || '';
 					var customerId = customer.id || '';
@@ -1617,9 +1693,9 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					};
 
 					// Handle clicking on a result
-                                        resultItem.bind('click', function() {
-                                                selectCustomer(customerData);
-                                        });
+					resultItem.bind('click', function() {
+						selectCustomer(customerData);
+					});
 
 					resultsContainer.append(resultItem);
 				});
@@ -1637,7 +1713,7 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			}
 
 			// Function to select a customer
-                        function selectCustomer(customer) {
+			function selectCustomer(customer) {
 				console.log('Selecting customer:', customer);
 				selectedCustomer = customer;
 
@@ -1691,24 +1767,24 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				console.log('Customer fields populated and shown');
 
 				// Verify fields are actually populated
-                                setTimeout(function() {
-                                        console.log('Verification - Field values after population:', {
-                                                'selected_customer_id': $('#selected_customer_id').val(),
-                                                'customer_id': $('#customer_id').val(),
-                                                'firstname': $('#customer_firstname').val(),
-                                                'lastname': $('#customer_lastname').val(),
-                                                'email': $('#customer_email').val(),
-                                                'phone': $('#customer_phone').val(),
-                                                'inputs_visible': $('.customer_inputs').is(':visible')
-                                        });
-                                }, 100);
+				setTimeout(function() {
+					console.log('Verification - Field values after population:', {
+						'selected_customer_id': $('#selected_customer_id').val(),
+						'customer_id': $('#customer_id').val(),
+						'firstname': $('#customer_firstname').val(),
+						'lastname': $('#customer_lastname').val(),
+						'email': $('#customer_email').val(),
+						'phone': $('#customer_phone').val(),
+						'inputs_visible': $('.customer_inputs').is(':visible')
+					});
+				}, 100);
 
-                                if (customerId) {
-                                        fetchCustomerNotes(customerId);
-                                } else {
-                                        resetCustomerNotes();
-                                }
-                        }
+				if (customerId) {
+					fetchCustomerNotes(customerId);
+				} else {
+					resetCustomerNotes();
+				}
+			}
 
 			// Function to show new customer input fields
 			function showNewCustomerInputs() {
@@ -1719,12 +1795,12 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				$('#customer_firstname').val('');
 				$('#customer_lastname').val('');
 				$('#customer_email').val('');
-                                $('#customer_phone').val('');
-                                $('.customer_inputs').show();
-                                console.log('New customer inputs shown');
+				$('#customer_phone').val('');
+				$('.customer_inputs').show();
+				console.log('New customer inputs shown');
 
-                                resetCustomerNotes();
-                        }
+				resetCustomerNotes();
+			}
 
 			// Load initial customers when customer tab is opened
 			function loadInitialCustomers() {
@@ -1779,7 +1855,7 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		}
 
 		// Function to load providers based on selected location
-		function loadProvidersByLocation(locationId) {
+		function loadProvidersByLocation(locationId, callback) {
 			if (!locationId) {
 				$('#appointment_provider').attr('disabled', true).empty().append('<option value="">First select a location</option>');
 				$('#appointment_service').attr('disabled', true).empty().append('<option value="">First select a provider</option>');
@@ -1812,6 +1888,12 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					// Reset service dropdown
 					$('#appointment_service').attr('disabled', true).empty().append('<option value="">First select a provider</option>');
 					clearServiceDetails();
+
+					// Call callback if provided (for auto-selecting provider)
+					if (typeof callback === 'function') {
+						console.log('Calling loadProvidersByLocation callback');
+						callback();
+					}
 				},
 				error: function() {
 					console.error('Error loading providers for location:', locationId);
@@ -2235,6 +2317,28 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			console.log('Form data prepared for submission');
 			console.log('Customer type:', isExistingCustomer ? 'Existing' : 'New');
 
+			// Temporarily enable disabled fields to ensure values are accessible
+			// (Old jQuery version might have issues reading disabled field values)
+			var locationWasDisabled = $('#appointment_location').is(':disabled');
+			var providerWasDisabled = $('#appointment_provider').is(':disabled');
+
+			if (locationWasDisabled) {
+				$('#appointment_location').removeAttr('disabled');
+			}
+			if (providerWasDisabled) {
+				$('#appointment_provider').removeAttr('disabled');
+			}
+
+			// Debug: Check field values before creating request data
+			console.log('=== FIELD VALUES BEFORE SUBMISSION ===');
+			console.log('appointment_date:', $('#appointment_date').val());
+			console.log('appointment_time:', $('#appointment_time').val());
+			console.log('appointment_end_time:', $('#appointment_end_time').val());
+			console.log('location_id:', $('#appointment_location').val());
+			console.log('provider_id:', $('#appointment_provider').val());
+			console.log('service_id:', $('#appointment_service').val());
+			console.log('=== END FIELD VALUES ===');
+
 			// Prepare data object for submission
 			var requestData = {
 				appointment_date: $('#appointment_date').val(),
@@ -2274,7 +2378,13 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					} else {
 						console.error('Server returned error:', response);
 						alert('Error creating appointment: ' + (response.message || response.error || 'Unknown error'));
-						// Don't close modal on error - let user fix the issue
+						// Re-disable fields if there was an error and user needs to stay on form
+						if (locationWasDisabled) {
+							$('#appointment_location').attr('disabled', true);
+						}
+						if (providerWasDisabled) {
+							$('#appointment_provider').attr('disabled', true);
+						}
 					}
 				},
 				error: function(xhr, status, error) {
@@ -2301,7 +2411,13 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					}
 
 					alert(errorMessage);
-					// Don't close modal on error - let user fix the issue
+					// Re-disable fields on error so user can fix and try again
+					if (locationWasDisabled) {
+						$('#appointment_location').attr('disabled', true);
+					}
+					if (providerWasDisabled) {
+						$('#appointment_provider').attr('disabled', true);
+					}
 				}
 			});
 		} // Function to reset the appointment form
@@ -2318,6 +2434,10 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			// Reset selected time slot display
 			$('#selected_start_time').text('-');
 			$('#selected_end_time').text('-');
+
+			// Re-enable location and provider dropdowns (they might have been disabled by auto-selection)
+			$('#appointment_location').attr('disabled', false);
+			console.log('Location dropdown re-enabled in reset');
 
 			// Reset cascading dropdowns to initial state
 			$('#appointment_provider').attr('disabled', true).empty().append('<option value="">First select a location</option>');
@@ -2463,10 +2583,27 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 
 		$.each(bookingJson, function(key, value) {
 			console.warn(value);
+			console.log('Processing appointment:', value.appointment_id, 'created_source:', value.created_source);
+
 			var title = value.title;
 			if (value.total_bookings > 1) {
 				title = value.total_bookings + " <?php echo p__("appointmentpro", "Bookings. <br> Click here view all bookings!"); ?>"
 			}
+
+			// Add icon to title based on created_source
+			var sourceIcon = '';
+			if (value.created_source === 'app') {
+				sourceIcon = '<i class="fa fa-mobile" style="font-size: 14px; margin-right: 5px;" title="Created from Mobile App"></i>';
+			} else if (value.created_source === 'desktop') {
+				sourceIcon = '<i class="fa fa-desktop" style="font-size: 14px; margin-right: 5px;" title="Created from Desktop"></i>';
+			} else {
+				// Default to desktop if not set
+				sourceIcon = '<i class="fa fa-desktop" style="font-size: 14px; margin-right: 5px;" title="Created from Desktop"></i>';
+			}
+
+			// Prepend icon to title (will show in appointment body)
+			title = sourceIcon + title;
+
 			// // service_name
 			// if (value.service_name) {
 			// 	title += "<br>" + value.service_name;
