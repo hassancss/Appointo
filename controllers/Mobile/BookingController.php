@@ -296,7 +296,7 @@ class Appointmentpro_Mobile_BookingController extends Application_Controller_Mob
                     $db = Zend_Db_Table::getDefaultAdapter();
                     $select = $db->select()
                         ->from('appointment')
-                        ->where('service_provider_id = ?', $param['provider_id'])
+                        ->where('(service_provider_id = ? OR service_provider_id_2 = ?)', $param['provider_id'])
                         ->where('appointment_date = ?', $booking_date)
                         ->where('service_id = ?', $param['service_id']);
 
@@ -356,7 +356,17 @@ class Appointmentpro_Mobile_BookingController extends Application_Controller_Mob
                 ->setServicePlcPoint($param['details']['service_points'])
                 ->setValueId($value_id)
                 ->setAdditionalInfo($additional_info)
-                ->setIsAddPlcPoints($setIsAddPlcPoints);
+                ->setIsAddPlcPoints($setIsAddPlcPoints)
+                ->setCreatedSource('app'); // Flag for mobile app creation
+
+            // Set second provider for break time services if provided
+            if (!empty($param['provider_2_id']) && isset($breakConfig) && $breakConfig->getId() && $breakConfig->getHasBreakTime()) {
+                try {
+                    $model->setServiceProviderId2($param['provider_2_id']);
+                } catch (Exception $e) {
+                    error_log('Warning: Could not set provider_2_id in mobile - ' . $e->getMessage());
+                }
+            }
 
             if ($param['is_class']) {
                 $model->setClassId($param['service_id'])

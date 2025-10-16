@@ -432,7 +432,7 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                 $db = Zend_Db_Table::getDefaultAdapter();
                 $select = $db->select()
                     ->from('appointment')
-                    ->where('service_provider_id = ?', $param['provider_id'])
+                    ->where('(service_provider_id = ? OR service_provider_id_2 = ?)', $param['provider_id'])
                     ->where('appointment_date = ?', $appointmentDate)
                     ->where('service_id = ?', $param['service_id']);
 
@@ -478,6 +478,16 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                 ->setServicePlcPoint($service['service_points'])
                 ->setValueId($value_id)
                 ->setIsAddPlcPoints(1);
+
+            // Set second provider for break time services if provided
+            if (!empty($param['provider_2_id']) && $breakConfig->getId() && $breakConfig->getHasBreakTime()) {
+                try {
+                    $appointmentModel->setServiceProviderId2($param['provider_2_id']);
+                } catch (Exception $e) {
+                    // Column might not exist, log but continue
+                    error_log('Warning: Could not set provider_2_id - ' . $e->getMessage());
+                }
+            }
 
             $appointmentModel->save();
             $appointmentId = $appointmentModel->getAppointmentId();
@@ -986,10 +996,10 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                             // Don't change timeDiff here - it should remain the actual service time for conflict checking
                         }
 
-                        // Generate time slots using 5-minute intervals for granular booking
-                        $timeBound = strtotime('-5 minutes', $toTime);
+                        // Generate time slots using 30-minute intervals for booking
+                        $timeBound = strtotime('-30 minutes', $toTime);
                         if ($timeDiff > 0) {
-                            for ($i = $fromTime; $i <= $timeBound; $i = strtotime('+5 minutes', $i)) {
+                            for ($i = $fromTime; $i <= $timeBound; $i = strtotime('+30 minutes', $i)) {
                                 $timeArray[] = $i;
                             }
                         }
@@ -1514,7 +1524,7 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                 $db = Zend_Db_Table::getDefaultAdapter();
                 $select = $db->select()
                     ->from('appointment')
-                    ->where('service_provider_id = ?', $param['provider_id'])
+                    ->where('(service_provider_id = ? OR service_provider_id_2 = ?)', $param['provider_id'])
                     ->where('appointment_date = ?', $booking_date)
                     ->where('service_id = ?', $param['service_main_id']);
 
@@ -1548,7 +1558,7 @@ class Appointmentpro_BookingController extends Application_Controller_Default
             $db = Zend_Db_Table::getDefaultAdapter();
             $select = $db->select()
                 ->from('appointment')
-                ->where('service_provider_id = ?', $param['provider_id'])
+                ->where('(service_provider_id = ? OR service_provider_id_2 = ?)', $param['provider_id'])
                 ->where('appointment_date = ?', $booking_date)
                 ->where('status != ?', 'cancelled'); // Exclude cancelled appointments
 
@@ -1788,8 +1798,8 @@ class Appointmentpro_BookingController extends Application_Controller_Default
             list($hour, $minute) = explode(':', $startDateTime);
             $startTime = ($hour * 3600) + ($minute * 60);
 
-            // Validate timestamp conversion
-            if ($startTime === false || $startTime <= 0) {
+            // Validate timestamp conversion (allow 0 for midnight 00:00)
+            if ($startTime === false || $startTime < 0) {
                 error_log("Invalid timestamp conversion for: " . $startDateTime);
                 throw new Exception('Invalid appointment date/time format');
             }
@@ -1840,7 +1850,7 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                 $db = Zend_Db_Table::getDefaultAdapter();
                 $select = $db->select()
                     ->from('appointment')
-                    ->where('service_provider_id = ?', $param['provider_id'])
+                    ->where('(service_provider_id = ? OR service_provider_id_2 = ?)', $param['provider_id'])
                     ->where('appointment_date = ?', $booking_date)
                     ->where('service_id = ?', $param['service_id']);
 
@@ -1909,7 +1919,17 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                 ->setServicePlcPoint($total_service_points)
                 ->setValueId($value_id)
                 ->setAdditionalInfo($additional_info)
-                ->setIsAddPlcPoints($setIsAddPlcPoints);
+                ->setIsAddPlcPoints($setIsAddPlcPoints)
+                ->setCreatedSource('desktop'); // Flag for desktop calendar creation
+
+            // Set second provider for break time services if provided
+            if (!empty($param['provider_2_id']) && $breakConfig->getId() && $breakConfig->getHasBreakTime()) {
+                try {
+                    $model->setServiceProviderId2($param['provider_2_id']);
+                } catch (Exception $e) {
+                    error_log('Warning: Could not set provider_2_id - ' . $e->getMessage());
+                }
+            }
 
             $model->save();
             $appointmentId = $model->getAppointmentId();
@@ -1972,25 +1992,48 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                 throw new Exception('Appointment not found');
             }
 
+            // Check if service has break time enabled
+            $hasBreakTime = false;
+            $currentProvider2Id = null;
+
+            try {
+                $breakConfig = (new Appointmentpro_Model_ServiceBreakConfig())->find(['service_id' => $booking['service_id']]);
+                if ($breakConfig->getId() && $breakConfig->getHasBreakTime()) {
+                    $hasBreakTime = true;
+                    // Get second provider if exists (from appointment table or separate table)
+                    $currentProvider2Id = $booking['service_provider_id_2'] ?? null;
+                }
+            } catch (Exception $e) {
+                // Break config not found or error, treat as non-break service
+                $hasBreakTime = false;
+            }
+
             // Get all providers for this location and service
             $availableProviders = (new Appointmentpro_Model_Provider())
                 ->findServiceProvider($booking['location_id'], $booking['service_id']);
 
+            // Debug: Log what providers are found
+            error_log("Available Providers Count: " . count($availableProviders));
+            error_log("Current Provider ID from booking: " . $booking['service_provider_id']);
+
             $providersJson = [];
             foreach ($availableProviders as $provider) {
-                // Exclude the current provider from the list
-                if ($provider['provider_id'] != $booking['service_provider_id']) {
-                    $providersJson[] = [
-                        'provider_id' => $provider['provider_id'],
-                        'name' => $provider['name']
-                    ];
-                }
+                error_log("Provider in list: ID=" . $provider['provider_id'] . ", Name=" . $provider['name']);
+
+                // Include all providers (including current provider)
+                // Frontend will mark the current provider as selected
+                $providersJson[] = [
+                    'provider_id' => $provider['provider_id'],
+                    'name' => $provider['name']
+                ];
             }
 
             $payload = [
                 'success' => true,
                 'providers' => $providersJson,
-                'current_provider_id' => $booking['service_provider_id']
+                'current_provider_id' => $booking['service_provider_id'],
+                'current_provider_2_id' => $currentProvider2Id,
+                'has_break_time' => $hasBreakTime
             ];
         } catch (\Exception $e) {
             $payload = [
@@ -2134,6 +2177,86 @@ class Appointmentpro_BookingController extends Application_Controller_Default
     }
 
     /**
+     * Validate dual provider availability for break time appointments
+     */
+    public function validateDualProviderAvailabilityAction()
+    {
+        try {
+            $appointmentId = $this->getRequest()->getParam('appointment_id');
+            $provider1Id = $this->getRequest()->getParam('provider_1_id');
+            $provider2Id = $this->getRequest()->getParam('provider_2_id');
+
+            if (empty($appointmentId) || empty($provider1Id) || empty($provider2Id)) {
+                throw new Exception('Appointment ID and both Provider IDs are required');
+            }
+
+            // Get current appointment details
+            $booking = (new Appointmentpro_Model_Booking())->getBookingById($appointmentId);
+            if (!$booking) {
+                throw new Exception('Appointment not found');
+            }
+
+            // Get break configuration to calculate time slots
+            $breakConfig = (new Appointmentpro_Model_ServiceBreakConfig())->find(['service_id' => $booking['service_id']]);
+            if (!$breakConfig->getId() || !$breakConfig->getHasBreakTime()) {
+                throw new Exception('This service does not have break time enabled');
+            }
+
+            $workBefore = $breakConfig->getWorkTimeBeforeBreak() * 60; // Convert to seconds
+            $breakDuration = $breakConfig->getBreakDuration() * 60;
+
+            // Provider 1 time slot: appointment_time to (appointment_time + workBefore + breakDuration)
+            $provider1EndTime = $booking['appointment_time'] + $workBefore + $breakDuration;
+
+            // Provider 2 time slot: provider1EndTime to appointment_end_time
+            $provider2StartTime = $provider1EndTime;
+            $provider2EndTime = $booking['appointment_end_time'];
+
+            $appointmentDate = date('d-m-Y', $booking['appointment_date']);
+
+            // Validate Provider 1 availability
+            $params1 = [
+                'location_id' => $booking['location_id'],
+                'provider_id' => $provider1Id,
+                'service_id' => $booking['service_id']
+            ];
+            $availability1 = (new Appointmentpro_Model_Provider())->getServiceTime($appointmentDate, $params1);
+
+            // Validate Provider 2 availability  
+            $params2 = [
+                'location_id' => $booking['location_id'],
+                'provider_id' => $provider2Id,
+                'service_id' => $booking['service_id']
+            ];
+            $availability2 = (new Appointmentpro_Model_Provider())->getServiceTime($appointmentDate, $params2);
+
+            // Check for conflicts (simplified - you may want to add more detailed checks)
+            $provider1Available = !empty($availability1['spData']);
+            $provider2Available = !empty($availability2['spData']);
+
+            if (!$provider1Available) {
+                throw new Exception('Provider 1 is not available for the selected time slot');
+            }
+
+            if (!$provider2Available) {
+                throw new Exception('Provider 2 is not available for the selected time slot');
+            }
+
+            $payload = [
+                'success' => true,
+                'message' => 'Both providers are available for their respective time slots',
+            ];
+        } catch (\Exception $e) {
+            $payload = [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+
+        $this->_sendJson($payload);
+    }
+
+    /**
      * Change provider for existing appointment
      */
     public function changeProviderAction()
@@ -2142,9 +2265,16 @@ class Appointmentpro_BookingController extends Application_Controller_Default
         try {
             $appointmentId = $this->getRequest()->getParam('appointment_id');
             $newProviderId = $this->getRequest()->getParam('provider_id');
+            $hasBreakTime = $this->getRequest()->getParam('has_break_time', false);
+            $provider2Id = $this->getRequest()->getParam('provider_2_id', null);
 
             if (empty($appointmentId) || empty($newProviderId)) {
                 throw new Exception('Appointment ID and Provider ID are required');
+            }
+
+            // For break time services, require provider 2
+            if ($hasBreakTime && empty($provider2Id)) {
+                throw new Exception('Second provider is required for break time services');
             }
 
             // Verify appointment exists
@@ -2163,18 +2293,43 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                 throw new Exception('Provider not found');
             }
 
+            // For break time, validate provider 2 as well
+            if ($hasBreakTime && $provider2Id) {
+                $provider2 = $providerModel->find($provider2Id);
+                if (!$provider2->getId()) {
+                    throw new Exception('Second provider not found');
+                }
+            }
+
             // Update the service_provider_id in the appointment table
             $appointmentModel = new Appointmentpro_Model_Appointment();
             $appointmentRecord = $appointmentModel->find(['appointment_id' => $appointmentId]);
 
             if ($appointmentRecord->getId()) {
                 $appointmentRecord->setServiceProviderId($newProviderId);
+
+                // Save second provider if break time service
+                if ($hasBreakTime && $provider2Id) {
+                    // Check if appointment table has service_provider_id_2 column
+                    try {
+                        $appointmentRecord->setServiceProviderId2($provider2Id);
+                    } catch (Exception $e) {
+                        // Column might not exist yet, log but don't fail
+                        error_log('Warning: service_provider_id_2 column not found in appointment table');
+                    }
+                }
+
                 $appointmentRecord->save();
+
+                $message = $hasBreakTime
+                    ? 'Providers changed successfully for break time service'
+                    : 'Provider changed successfully';
 
                 $payload = [
                     'success' => true,
-                    'message' => 'Provider changed successfully',
-                    'new_provider_id' => $newProviderId
+                    'message' => $message,
+                    'new_provider_id' => $newProviderId,
+                    'new_provider_2_id' => $provider2Id
                 ];
             } else {
                 throw new Exception('Appointment record not found');

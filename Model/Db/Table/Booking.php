@@ -986,6 +986,8 @@ class Appointmentpro_Model_Db_Table_Booking extends Core_Model_Db_Table
                 "a.service_amount",
                 "a.service_plc_point",
                 "a.created_at",
+                "a.service_provider_id",      // First provider
+                "a.service_provider_id_2"     // Second provider for break time services
             ])
             ->joinLeft(array('al' => 'appointment_location'), 'a.location_id = al.location_id', [
                 "al.location_id",
@@ -1086,6 +1088,7 @@ class Appointmentpro_Model_Db_Table_Booking extends Core_Model_Db_Table
                 "a.additional_info",
                 "a.is_add_plc_points",
                 "a.created_at",
+                "a.created_source", // Add created_source column
                 "total_bookings" => new Zend_Db_Expr('(' . $this->_db->select()->from(array('b' =>  $this->_name), array(new Zend_Db_Expr('COUNT(b.appointment_id)')))->where('b.appointment_date = a.appointment_date')->where('b.appointment_time = a.appointment_time')->where('b.service_provider_id = a.service_provider_id')->where('b.status NOT IN (?)', [5, 6, 8])->where('b.is_delete = ?', 0) . ')')
                 //  "total_bookings" => new Zend_Db_Expr('(' . $this->_db->select()->from(array('b' =>  $this->_name), array(new Zend_Db_Expr('COUNT(b.appointment_id)')))->where('b.appointment_date = a.appointment_date')->where('b.appointment_time = a.appointment_time')->where('b.service_provider_id = a.service_provider_id')->where('b.status IN (?)', [2, 3, 4, 9]) . ')')
             ])

@@ -180,7 +180,48 @@ if (class_exists("EaziSettings_Model_Settings")) {
 															<td><?php echo '#' . $booking['service_id']; ?></td>
 															<td><?php echo  $booking['service_name']; ?></td>
 															<td>
-																<?php echo  $booking['provider_name']; ?>
+																<?php
+																// Display Provider 1
+																echo $booking['provider_name'];
+
+																// Check if service has break time and second provider
+																$hasBreakTime = false;
+																$provider2Name = null;
+
+																try {
+																	$breakConfig = (new Appointmentpro_Model_ServiceBreakConfig())->find(['service_id' => $booking['service_id']]);
+																	if ($breakConfig->getId() && $breakConfig->getHasBreakTime()) {
+																		$hasBreakTime = true;
+
+																		// Get provider 2 name if exists
+																		if (!empty($booking['service_provider_id_2'])) {
+																			$provider2 = (new Appointmentpro_Model_Provider())->find($booking['service_provider_id_2']);
+																			if ($provider2->getId()) {
+																				$provider2Name = $provider2->getName();
+																			}
+																		}
+																	}
+																} catch (Exception $e) {
+																	// Ignore if break config not found
+																}
+
+																// Display Provider 2 if break time service
+																if ($hasBreakTime && $provider2Name):
+																?>
+																	<br>
+																	<small class="text-muted">
+																		<i class="fa fa-clock-o"></i> <?php echo p__("appointmentpro", "Break Time Service"); ?>
+																	</small>
+																	<br>
+																	<span class="label label-info" style="margin-top: 3px; display: inline-block;">
+																		<?php echo p__("appointmentpro", "Provider 1 (Before Break)"); ?>: <?php echo $booking['provider_name']; ?>
+																	</span>
+																	<br>
+																	<span class="label label-success" style="margin-top: 3px; display: inline-block;">
+																		<?php echo p__("appointmentpro", "Provider 2 (After Break)"); ?>: <?php echo $provider2Name; ?>
+																	</span>
+																<?php endif; ?>
+
 																<?php if (in_array($booking['numeric_status'], [0, 1, 2, 3])): // Only allow provider change for pending/confirmed appointments - using numeric status 
 																?>
 																	<br>
@@ -280,12 +321,49 @@ if (class_exists("EaziSettings_Model_Settings")) {
 				</button>
 			</div>
 			<div class="modal-body">
-				<div class="form-group">
-					<label for="provider-select"><?php echo p__("appointmentpro", "Select New Provider"); ?></label>
-					<select id="provider-select" class="form-control">
-						<option value=""><?php echo p__("appointmentpro", "Loading..."); ?></option>
-					</select>
+				<!-- Single Provider Selection (for non-break time services) -->
+				<div id="single-provider-section">
+					<div class="form-group">
+						<label for="provider-select"><?php echo p__("appointmentpro", "Select New Provider"); ?></label>
+						<select id="provider-select" class="form-control">
+							<option value=""><?php echo p__("appointmentpro", "Loading..."); ?></option>
+						</select>
+					</div>
 				</div>
+
+				<!-- Dual Provider Selection (for break time services) -->
+				<div id="dual-provider-section" style="display: none;">
+					<div class="alert alert-info">
+						<i class="fa fa-info-circle"></i>
+						<strong><?php echo p__("appointmentpro", "Break Time Service"); ?></strong>
+						<p><?php echo p__("appointmentpro", "This service has a break period. You can assign different providers for before and after the break."); ?></p>
+					</div>
+
+					<div class="form-group">
+						<label for="provider-before-break">
+							<i class="fa fa-user"></i> <?php echo p__("appointmentpro", "Provider 1 (Before & During Break)"); ?>
+						</label>
+						<select id="provider-before-break" class="form-control">
+							<option value=""><?php echo p__("appointmentpro", "Loading..."); ?></option>
+						</select>
+						<small class="text-muted"><?php echo p__("appointmentpro", "Handles initial work and break period"); ?></small>
+					</div>
+
+					<div class="form-group">
+						<label for="provider-after-break">
+							<i class="fa fa-user"></i> <?php echo p__("appointmentpro", "Provider 2 (After Break)"); ?>
+						</label>
+						<select id="provider-after-break" class="form-control">
+							<option value=""><?php echo p__("appointmentpro", "Loading..."); ?></option>
+						</select>
+						<small class="text-muted"><?php echo p__("appointmentpro", "Handles work after break period"); ?></small>
+					</div>
+
+					<div id="provider-2-availability" class="alert" style="display: none;">
+						<span id="provider-2-message"></span>
+					</div>
+				</div>
+
 				<div id="availability-status" class="alert" style="display: none;">
 					<span id="availability-message"></span>
 				</div>
@@ -306,14 +384,24 @@ if (class_exists("EaziSettings_Model_Settings")) {
 	$(document).ready(function() {
 		var appointmentId = <?php echo $booking['appointment_id']; ?>;
 		var availableProviders = [];
+		var hasBreakTime = false;
+		var currentProvider2Id = null;
 
 		// Load available providers when modal opens
 		$('#change-provider-btn').click(function() {
+			// Show loading alert
+			swal({
+				title: '<?php echo p__("appointmentpro", "Loading..."); ?>',
+				text: '<?php echo p__("appointmentpro", "Please wait while we load available providers"); ?>',
+				showConfirmButton: false,
+				allowOutsideClick: false,
+				closeOnClickOutside: false
+			});
+
 			loadAvailableProviders();
-			$('#changeProviderModal').modal('show');
 		});
 
-		// Handle provider selection change
+		// Handle provider selection change for single provider
 		$('#provider-select').change(function() {
 			var selectedProviderId = $(this).val();
 			if (selectedProviderId) {
@@ -324,11 +412,29 @@ if (class_exists("EaziSettings_Model_Settings")) {
 			}
 		});
 
+		// Handle provider 1 (before break) selection change
+		$('#provider-before-break').change(function() {
+			validateDualProviders();
+		});
+
+		// Handle provider 2 (after break) selection change
+		$('#provider-after-break').change(function() {
+			validateDualProviders();
+		});
+
 		// Handle provider change confirmation
 		$('#confirm-provider-change').click(function() {
-			var selectedProviderId = $('#provider-select').val();
-			if (selectedProviderId) {
-				changeProvider(selectedProviderId);
+			if (hasBreakTime) {
+				var provider1Id = $('#provider-before-break').val();
+				var provider2Id = $('#provider-after-break').val();
+				if (provider1Id && provider2Id) {
+					changeDualProviders(provider1Id, provider2Id);
+				}
+			} else {
+				var selectedProviderId = $('#provider-select').val();
+				if (selectedProviderId) {
+					changeProvider(selectedProviderId);
+				}
 			}
 		});
 
@@ -343,13 +449,42 @@ if (class_exists("EaziSettings_Model_Settings")) {
 				success: function(response) {
 					if (response.success) {
 						availableProviders = response.providers;
-						populateProviderSelect(response.providers, response.current_provider_id);
+						hasBreakTime = response.has_break_time || false;
+						currentProvider2Id = response.current_provider_2_id || null;
+
+						if (hasBreakTime) {
+							// Show dual provider section
+							$('#single-provider-section').hide();
+							$('#dual-provider-section').show();
+							populateDualProviderSelects(response.providers, response.current_provider_id, currentProvider2Id);
+						} else {
+							// Show single provider section
+							$('#single-provider-section').show();
+							$('#dual-provider-section').hide();
+							populateProviderSelect(response.providers, response.current_provider_id);
+						}
+
+						// Close the loading alert and open modal
+						swal.close();
+						$('#changeProviderModal').modal('show');
 					} else {
-						showError('Failed to load providers: ' + response.message);
+						// Close loader and show error
+						swal({
+							title: '<?php echo p__("appointmentpro", "Error"); ?>',
+							text: 'Failed to load providers: ' + response.message,
+							type: 'error',
+							confirmButtonText: '<?php echo p__("appointmentpro", "OK"); ?>'
+						});
 					}
 				},
 				error: function() {
-					showError('Failed to load providers. Please try again.');
+					// Close loader and show error
+					swal({
+						title: '<?php echo p__("appointmentpro", "Error"); ?>',
+						text: '<?php echo p__("appointmentpro", "Failed to load providers. Please try again."); ?>',
+						type: 'error',
+						confirmButtonText: '<?php echo p__("appointmentpro", "OK"); ?>'
+					});
 				}
 			});
 		}
@@ -357,16 +492,150 @@ if (class_exists("EaziSettings_Model_Settings")) {
 		function populateProviderSelect(providers, currentProviderId) {
 			var select = $('#provider-select');
 			select.empty();
-			select.append('<option value=""><?php echo p__("appointmentpro", "Select Provider"); ?></option>');
+
+			// Debug: Check what value is being passed
+			console.log('Single Provider - Current Provider ID:', currentProviderId, 'Type:', typeof currentProviderId);
+
+			// Add empty option only if no provider is currently selected
+			if (!currentProviderId || currentProviderId == '' || currentProviderId == null) {
+				select.append('<option value=""><?php echo p__("appointmentpro", "Select Provider"); ?></option>');
+			}
 
 			$.each(providers, function(index, provider) {
-				// Skip the current provider - don't add them to the dropdown at all
-				if (provider.provider_id != currentProviderId) {
-					var option = $('<option></option>')
-						.val(provider.provider_id)
-						.text(provider.name);
+				console.log('Checking provider:', provider.provider_id, 'Name:', provider.name, 'Type:', typeof provider.provider_id, 'against currentProviderId:', currentProviderId);
 
-					select.append(option);
+				// Add all providers to the dropdown
+				var option = $('<option></option>')
+					.val(provider.provider_id)
+					.text(provider.name);
+
+				// Mark the current provider as selected
+				if (currentProviderId && String(provider.provider_id) == String(currentProviderId)) {
+					console.log('Matched! Setting as selected:', provider.name);
+					option.prop('selected', true);
+				}
+
+				select.append(option);
+			});
+		}
+
+		function populateDualProviderSelects(providers, currentProviderId, currentProvider2Id) {
+			var select1 = $('#provider-before-break');
+			var select2 = $('#provider-after-break');
+
+			// Debug: Check what values are being passed
+			console.log('Current Provider ID:', currentProviderId, 'Type:', typeof currentProviderId);
+			console.log('Current Provider 2 ID:', currentProvider2Id, 'Type:', typeof currentProvider2Id);
+
+			select1.empty();
+			select2.empty();
+
+			// Add empty option only if no provider is currently selected
+			if (!currentProviderId || currentProviderId == '' || currentProviderId == null) {
+				select1.append('<option value=""><?php echo p__("appointmentpro", "Select Provider 1"); ?></option>');
+			}
+			if (!currentProvider2Id || currentProvider2Id == '' || currentProvider2Id == null) {
+				select2.append('<option value=""><?php echo p__("appointmentpro", "Select Provider 2"); ?></option>');
+			}
+
+			$.each(providers, function(index, provider) {
+				console.log('Checking provider:', provider.provider_id, 'Type:', typeof provider.provider_id, 'against currentProviderId:', currentProviderId);
+
+				// Provider 1 dropdown - select current provider (provider 1)
+				var option1 = $('<option></option>')
+					.val(provider.provider_id)
+					.text(provider.name);
+				// Select in dropdown 1 if it matches the FIRST provider (using == for loose comparison)
+				if (currentProviderId && String(provider.provider_id) == String(currentProviderId)) {
+					console.log('Matched! Setting provider 1 as selected:', provider.name);
+					option1.prop('selected', true);
+				}
+				select1.append(option1);
+
+				// Provider 2 dropdown - select second provider if set
+				var option2 = $('<option></option>')
+					.val(provider.provider_id)
+					.text(provider.name);
+				// Select in dropdown 2 if it matches the SECOND provider (using == for loose comparison)
+				if (currentProvider2Id && String(provider.provider_id) == String(currentProvider2Id)) {
+					console.log('Matched! Setting provider 2 as selected:', provider.name);
+					option2.prop('selected', true);
+				}
+				select2.append(option2);
+			});
+		}
+
+		function validateDualProviders() {
+			var provider1Id = $('#provider-before-break').val();
+			var provider2Id = $('#provider-after-break').val();
+
+			$('#confirm-provider-change').prop('disabled', true);
+			hideAvailabilityStatus();
+			$('#provider-2-availability').hide();
+
+			if (!provider1Id || !provider2Id) {
+				return;
+			}
+
+			// Validate both providers' availability
+			showAvailabilityStatus('info', '<?php echo p__("appointmentpro", "Checking availability for both providers..."); ?>');
+
+			$.ajax({
+				type: 'GET',
+				url: '/appointmentpro/booking/validate-dual-provider-availability',
+				data: {
+					appointment_id: appointmentId,
+					provider_1_id: provider1Id,
+					provider_2_id: provider2Id
+				},
+				dataType: 'json',
+				success: function(response) {
+					if (response.success) {
+						showAvailabilityStatus('success', response.message);
+						$('#confirm-provider-change').prop('disabled', false);
+					} else {
+						showAvailabilityStatus('danger', response.message);
+					}
+				},
+				error: function() {
+					showAvailabilityStatus('danger', '<?php echo p__("appointmentpro", "Failed to check availability. Please try again."); ?>');
+				}
+			});
+		}
+
+		function changeDualProviders(provider1Id, provider2Id) {
+			var button = $('#confirm-provider-change');
+			var originalText = button.text();
+			button.text('<?php echo p__("appointmentpro", "Changing..."); ?>').prop('disabled', true);
+
+			$.ajax({
+				type: 'POST',
+				url: '/appointmentpro/booking/change-provider',
+				data: {
+					appointment_id: appointmentId,
+					provider_id: provider1Id,
+					provider_2_id: provider2Id,
+					has_break_time: true
+				},
+				dataType: 'json',
+				success: function(response) {
+					if (response.success) {
+						swal({
+							title: "<?php echo p__("appointmentpro", "Success"); ?>",
+							text: response.message,
+							type: "success",
+							confirmButtonText: "<?php echo p__("appointmentpro", "OK"); ?>"
+						}, function() {
+							location.reload();
+						});
+					} else {
+						showError(response.message);
+						button.text(originalText).prop('disabled', false);
+					}
+				},
+				error: function() {
+					showError('<?php echo p__("appointmentpro", "Failed to change providers. Please try again."); ?>');
+					button.text(originalText).prop('disabled', false);
 				}
 			});
 		}

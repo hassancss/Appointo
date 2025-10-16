@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Schema for appointments table
  */
@@ -23,6 +24,11 @@ $schemas['appointment'] = [
     ],
     'service_provider_id' => [
         'type' => 'int(11) unsigned'
+    ],
+    'service_provider_id_2' => [
+        'type' => 'int(11) unsigned',
+        'is_null' => true,
+        'default' => null
     ],
     'customer_id' => [
         'type' => 'int(11) unsigned'
@@ -119,6 +125,13 @@ $schemas['appointment'] = [
         'charset' => 'utf8',
         'collation' => 'utf8_unicode_ci',
         'is_null' => true,
+    ],
+    'created_source' => [
+        'type' => 'varchar(20)',
+        'charset' => 'utf8',
+        'collation' => 'utf8_unicode_ci',
+        'default' => 'desktop',
+        'comment' => 'Source of appointment creation: app or desktop'
     ],
     'created_at' => [
         'type' => 'datetime'

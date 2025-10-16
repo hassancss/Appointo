@@ -206,7 +206,7 @@ class Appointmentpro_Model_Db_Table_Provider extends Core_Model_Db_Table
             $select2 = $this->_db->select()
                 ->from(array('apt' => 'appointment'))
                 ->where('apt.status  IN (?)', [2, 3, 4, 9])
-                ->where('apt.service_provider_id = ?', $provider_id)
+                ->where('(apt.service_provider_id = ? OR apt.service_provider_id_2 = ?)', $provider_id)
                 ->where('apt.is_delete = ?', 0)
                 ->where('apt.appointment_date >= ?', $fromDate)
                 ->where('apt.appointment_date <= ?', $toDate);
