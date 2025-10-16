@@ -114,8 +114,8 @@ class Appointmentpro_HistoryController extends Application_Controller_Default
                 "offset" => $offset,
                 "sorts" => $sorts,
                 "queries" => $queries,
-                "customer_id" => (empty($queries)) ? 'all' : $queries['customer_id'] ,
-                "service_id" => (empty($queries)) ? 'all' : $queries['service_id'],
+                "customer_id" => $queries['customer_id'] ?? 'all',
+                "service_id" => $queries['service_id'] ?? 'all',
                 "type" => $type,
                 "service_type" => $service_type,
                 "todayDate" => $todayDate
@@ -180,11 +180,14 @@ class Appointmentpro_HistoryController extends Application_Controller_Default
                 $bookingJson[] = $data;
             }
 
+            $totalCount = (int) ($countAll[0] ?? 0);
+            $filteredCount = (int) ($countFiltered[0] ?? $totalCount);
+
             $payload = [
                 "bookings" => $bookings,
                 "records" => $bookingJson,
-                "queryRecordCount" => 25,
-                "totalRecordCount" => 25,
+                "queryRecordCount" => $filteredCount,
+                "totalRecordCount" => $totalCount,
                 "queries" => $queries,
                 "params" => $params
             ];
