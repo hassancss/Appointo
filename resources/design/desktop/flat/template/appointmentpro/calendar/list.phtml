@@ -181,14 +181,20 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		background-color: #f8f9fa;
 	}
 
-	.search-result-item:last-child {
-		border-bottom: none;
-	}
+        .search-result-item:last-child {
+                border-bottom: none;
+        }
 
-	/* Modal adjustments */
-	.ui-dialog-titlebar {
-		background: #17a2b8;
-		color: white;
+        .wc-freebusy.closed-hours {
+                background: rgba(220, 53, 69, 0.18);
+                border: none;
+                pointer-events: none;
+        }
+
+        /* Modal adjustments */
+        .ui-dialog-titlebar {
+                background: #17a2b8;
+                color: white;
 		border: none;
 	}
 
@@ -532,17 +538,146 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 
 
 <script type="text/javascript">
-	var bookingJson = <?php echo str_replace("\n", "", json_encode($this->getBookings())); ?>;
-	var providers = <?php echo str_replace("\n", "", json_encode($this->getProvider())); ?>;
-	var startTime = <?php echo empty($currentLocation['fromTime']) ? 10 : $currentLocation['fromTime'];  ?>;
-	var endTime = <?php echo empty($currentLocation['toTime']) ? 20 : $currentLocation['toTime'];  ?>;
-	var use24hours = <?php echo $settings['time_format']; ?>;
-	var currentLanguage = '<?php echo Core_Model_Language::getCurrentLanguage(); ?>';
+        var bookingJson = <?php echo str_replace("\n", "", json_encode($this->getBookings())); ?>;
+        var providers = <?php echo str_replace("\n", "", json_encode($this->getProvider())); ?>;
+        var startTime = <?php echo empty($currentLocation['fromTime']) ? 10 : $currentLocation['fromTime'];  ?>;
+        var endTime = <?php echo empty($currentLocation['toTime']) ? 20 : $currentLocation['toTime'];  ?>;
+        var use24hours = <?php echo $settings['time_format']; ?>;
+        var currentLanguage = '<?php echo Core_Model_Language::getCurrentLanguage(); ?>';
+        var businessHoursByDay = <?php echo json_encode($currentLocation['business_hours_by_day'] ?? []); ?>;
+        var hasActiveBusinessHours = <?php echo !empty($currentLocation['is_business_timing']) ? 'true' : 'false'; ?>;
+
+        startTime = parseInt(startTime, 10);
+        endTime = parseInt(endTime, 10);
+        if (isNaN(startTime)) {
+                startTime = 0;
+        }
+        if (isNaN(endTime)) {
+                endTime = 24;
+        }
+        if (endTime <= startTime) {
+                endTime = Math.min(startTime + 1, 24);
+        }
+
+        if (!Array.isArray(businessHoursByDay)) {
+                businessHoursByDay = [];
+        }
+
+        hasActiveBusinessHours = !!hasActiveBusinessHours;
+
+        var closedDayMessage = "<?php echo addslashes(p__('appointmentpro', 'This location is closed on the selected day.')); ?>";
+        var outsideHoursMessageTemplate = "<?php echo addslashes(p__('appointmentpro', 'Working hours: %start% - %end%. Please choose a time within this range.')); ?>";
+        var missingHoursMessage = "<?php echo addslashes(p__('appointmentpro', 'Business hours are not configured for this location.')); ?>";
+        var multiDaySpanMessage = "<?php echo addslashes(p__('appointmentpro', 'Appointments must start and end on the same day.')); ?>";
 
 
-	var users = [];
-	var usersIndex = [];
-	var providerData = [];
+        var users = [];
+        var usersIndex = [];
+        var providerData = [];
+
+        function normalizeBusinessHoursData() {
+                if (!Array.isArray(businessHoursByDay)) {
+                        businessHoursByDay = [];
+                        return;
+                }
+
+                for (var i = 0; i < businessHoursByDay.length; i++) {
+                        if (!businessHoursByDay[i]) {
+                                businessHoursByDay[i] = {
+                                        day_key: null,
+                                        is_active: false,
+                                        start_minutes: null,
+                                        end_minutes: null,
+                                        start_label: null,
+                                        end_label: null
+                                };
+                        } else {
+                                businessHoursByDay[i].start_minutes = businessHoursByDay[i].start_minutes !== null ? parseInt(businessHoursByDay[i].start_minutes, 10) : null;
+                                businessHoursByDay[i].end_minutes = businessHoursByDay[i].end_minutes !== null ? parseInt(businessHoursByDay[i].end_minutes, 10) : null;
+                                businessHoursByDay[i].is_active = !!businessHoursByDay[i].is_active;
+                        }
+                }
+        }
+
+        function getBusinessHoursForDay(dayIndex) {
+                if (!Array.isArray(businessHoursByDay) || !businessHoursByDay.length) {
+                        return null;
+                }
+                return businessHoursByDay[dayIndex] || null;
+        }
+
+        function formatTimeFromMinutes(minutes) {
+                if (minutes === null || minutes === undefined) {
+                        return '';
+                }
+                var hrs = Math.floor(minutes / 60);
+                var mins = minutes % 60;
+                var paddedHours = hrs < 10 ? '0' + hrs : hrs;
+                var paddedMinutes = mins < 10 ? '0' + mins : mins;
+                return paddedHours + ':' + paddedMinutes;
+        }
+
+        function cloneDate(date) {
+                if (!date) {
+                        return null;
+                }
+
+                if (date instanceof Date) {
+                        return new Date(date.getTime());
+                }
+
+                return new Date(date);
+        }
+
+        function evaluateBusinessHours(calEvent) {
+                if (!hasActiveBusinessHours || !Array.isArray(businessHoursByDay) || !businessHoursByDay.length) {
+                        return { valid: true };
+                }
+                if (!calEvent || !calEvent.start || !calEvent.end) {
+                        return { valid: true };
+                }
+
+                var startDay = calEvent.start.getDay();
+                var endDay = calEvent.end.getDay();
+                if (startDay !== endDay) {
+                        return { valid: false, message: multiDaySpanMessage };
+                }
+
+                var dayConfig = getBusinessHoursForDay(startDay);
+                if (!dayConfig || !dayConfig.is_active) {
+                        return { valid: false, message: closedDayMessage };
+                }
+
+                if (dayConfig.start_minutes === null || dayConfig.end_minutes === null) {
+                        return { valid: false, message: missingHoursMessage };
+                }
+
+                var startMinutes = (calEvent.start.getHours() * 60) + calEvent.start.getMinutes();
+                var endMinutes = (calEvent.end.getHours() * 60) + calEvent.end.getMinutes();
+
+                if (startMinutes < dayConfig.start_minutes || endMinutes > dayConfig.end_minutes) {
+                        var startLabel = dayConfig.start_label || formatTimeFromMinutes(dayConfig.start_minutes);
+                        var endLabel = dayConfig.end_label || formatTimeFromMinutes(dayConfig.end_minutes);
+                        var message = outsideHoursMessageTemplate.replace('%start%', startLabel).replace('%end%', endLabel);
+                        return { valid: false, message: message };
+                }
+
+                return { valid: true };
+        }
+
+        function getCalendarUserIds() {
+                var ids = [];
+                if (Array.isArray(users) && users.length) {
+                        for (var i = 0; i < users.length; i++) {
+                                ids.push(i);
+                        }
+                } else {
+                        ids.push(null);
+                }
+                return ids;
+        }
+
+        normalizeBusinessHoursData();
 	$.each(providers, function(key, value) {
 		users.push(value.name);
 		usersIndex[value.provider_id] = key;
@@ -820,12 +955,26 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			firstDayOfWeek: 1,
 			timeSeparator: ' To ',
 			hourLine: true,
-			businessHours: {
-				start: startTime,
-				end: endTime,
-				limitDisplay: true
-			},
-			daysToShow: 3,
+                        businessHours: {
+                                start: startTime,
+                                end: endTime,
+                                limitDisplay: true
+                        },
+                        defaultFreeBusy: { free: true },
+                        freeBusyRender: function(freeBusy, $freeBusy) {
+                                if (freeBusy.free) {
+                                        return null;
+                                }
+
+                                $freeBusy.addClass('free-busy-busy');
+
+                                if (freeBusy.className) {
+                                        $freeBusy.addClass(freeBusy.className);
+                                }
+
+                                return $freeBusy;
+                        },
+                        daysToShow: 3,
 			switchDisplay: {
 				'<?php echo p__("appointmentpro", '1 Day'); ?>': 1,
 				'<?php echo p__("appointmentpro", '3 Next Days'); ?>': 3,
@@ -857,9 +1006,9 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			shortMonths: $.datepicker.regional[currentLanguage].monthNamesShort,
 			longMonths: $.datepicker.regional[currentLanguage].monthNames,
 			users: users,
-			data: function(start, end, callback) {
-				callback(getEventData());
-			},
+                        data: function(start, end, callback) {
+                                callback(getEventData(start, end));
+                        },
 			height: function($calendar) {
 				return $(window).height() - $('h1').outerHeight(true);
 			},
@@ -951,14 +1100,21 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				// }
 
 			},
-			eventNew: function(calEvent, $event) {
-				console.log('eventNew triggered!', calEvent);
+                        eventNew: function(calEvent, $event) {
+                                console.log('eventNew triggered!', calEvent);
 
-				// Check for overlaps with existing events
-				var hasOverlap = checkEventOverlap(calEvent);
-				if (hasOverlap) {
-					console.log('Overlap detected, preventing event creation');
-					alert('This time slot is already booked. Please choose a different time.');
+                                var validationResult = evaluateBusinessHours(calEvent);
+                                if (!validationResult.valid) {
+                                        alert(validationResult.message);
+                                        $('#calendar').weekCalendar("removeUnsavedEvents");
+                                        return false;
+                                }
+
+                                // Check for overlaps with existing events
+                                var hasOverlap = checkEventOverlap(calEvent);
+                                if (hasOverlap) {
+                                        console.log('Overlap detected, preventing event creation');
+                                        alert('This time slot is already booked. Please choose a different time.');
 					$('#calendar').weekCalendar("removeUnsavedEvents");
 					return false;
 				}
@@ -1224,13 +1380,29 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					$('#calendar').weekCalendar("removeEvent", currentCalEvent.id);
 				});
 			},
-			eventDrop: function(calEvent, $event) {
-				if (calEvent.readOnly != true) {
-					// Check for overlaps when moving events
-					var hasOverlap = checkEventOverlap(calEvent);
-					if (hasOverlap) {
-						console.log('Cannot move event - overlap detected');
-						alert('Cannot move to this time slot - it is already booked.');
+                        eventDrop: function(calEvent, $event) {
+                                if (calEvent.readOnly != true) {
+                                        var originalEvent = arguments[1] || {};
+                                        var validationResult = evaluateBusinessHours(calEvent);
+                                        if (!validationResult.valid) {
+                                                alert(validationResult.message);
+                                                if (originalEvent && originalEvent.start && originalEvent.end) {
+                                                        var originalStart = cloneDate(originalEvent.start);
+                                                        var originalEnd = cloneDate(originalEvent.end);
+                                                        if (originalStart && originalEnd) {
+                                                                calEvent.start = originalStart;
+                                                                calEvent.end = originalEnd;
+                                                                $('#calendar').weekCalendar('updateEvent', calEvent);
+                                                        }
+                                                }
+                                                return false;
+                                        }
+
+                                        // Check for overlaps when moving events
+                                        var hasOverlap = checkEventOverlap(calEvent);
+                                        if (hasOverlap) {
+                                                console.log('Cannot move event - overlap detected');
+                                                alert('Cannot move to this time slot - it is already booked.');
 						return false;
 					}
 
@@ -1240,13 +1412,29 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				}
 				return false;
 			},
-			eventResize: function(calEvent, $event) {
-				if (calEvent.readOnly != true) {
-					// Check for overlaps when resizing events
-					var hasOverlap = checkEventOverlap(calEvent);
-					if (hasOverlap) {
-						console.log('Cannot resize event - overlap detected');
-						alert('Cannot resize to this time - it conflicts with another booking.');
+                        eventResize: function(calEvent, $event) {
+                                if (calEvent.readOnly != true) {
+                                        var originalEvent = arguments[1] || {};
+                                        var validationResult = evaluateBusinessHours(calEvent);
+                                        if (!validationResult.valid) {
+                                                alert(validationResult.message);
+                                                if (originalEvent && originalEvent.start && originalEvent.end) {
+                                                        var resizeOriginalStart = cloneDate(originalEvent.start);
+                                                        var resizeOriginalEnd = cloneDate(originalEvent.end);
+                                                        if (resizeOriginalStart && resizeOriginalEnd) {
+                                                                calEvent.start = resizeOriginalStart;
+                                                                calEvent.end = resizeOriginalEnd;
+                                                                $('#calendar').weekCalendar('updateEvent', calEvent);
+                                                        }
+                                                }
+                                                return false;
+                                        }
+
+                                        // Check for overlaps when resizing events
+                                        var hasOverlap = checkEventOverlap(calEvent);
+                                        if (hasOverlap) {
+                                                console.log('Cannot resize event - overlap detected');
+                                                alert('Cannot resize to this time - it conflicts with another booking.');
 						return false;
 					}
 
@@ -2576,12 +2764,12 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		return passedTest;
 	}
 
-	function getEventData() {
-		var eventData = {
-			events: [],
-		};
+        function getEventData(rangeStart, rangeEnd) {
+                var eventData = {
+                        events: [],
+                };
 
-		$.each(bookingJson, function(key, value) {
+                $.each(bookingJson, function(key, value) {
 			console.warn(value);
 			console.log('Processing appointment:', value.appointment_id, 'created_source:', value.created_source);
 
@@ -2694,10 +2882,103 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			}
 		});
 
-		return eventData;
-	}
+                eventData.freebusys = buildFreeBusyData(rangeStart, rangeEnd);
 
-	function updateBookingStatus(bookingId, newStatus) {
+                return eventData;
+        }
+
+        function buildFreeBusyData(rangeStart, rangeEnd) {
+                if (!hasActiveBusinessHours || !Array.isArray(businessHoursByDay) || !businessHoursByDay.length) {
+                        return [];
+                }
+
+                if (!(rangeStart instanceof Date) || isNaN(rangeStart.getTime())) {
+                        return [];
+                }
+
+                if (!(rangeEnd instanceof Date) || isNaN(rangeEnd.getTime())) {
+                        return [];
+                }
+
+                if (rangeEnd.getTime() <= rangeStart.getTime()) {
+                        return [];
+                }
+
+                var effectiveStartHour = isNaN(startTime) ? 0 : startTime;
+                var effectiveEndHour = isNaN(endTime) ? 24 : endTime;
+
+                if (effectiveEndHour <= effectiveStartHour) {
+                        effectiveEndHour = Math.min(effectiveStartHour + 1, 24);
+                }
+
+                var freeBusys = [];
+                var userIds = getCalendarUserIds();
+                var dayCursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate());
+                var endCursor = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
+
+                if (rangeEnd.getHours() !== 0 || rangeEnd.getMinutes() !== 0 || rangeEnd.getSeconds() !== 0) {
+                        endCursor.setDate(endCursor.getDate() + 1);
+                }
+
+                while (dayCursor < endCursor) {
+                        var dayConfig = getBusinessHoursForDay(dayCursor.getDay());
+                        var visibleStartMinutes = effectiveStartHour * 60;
+                        var visibleEndMinutes = effectiveEndHour * 60;
+                        var busySegments = [];
+
+                        if (!dayConfig || !dayConfig.is_active || dayConfig.start_minutes === null || dayConfig.end_minutes === null) {
+                                busySegments.push({ start: visibleStartMinutes, end: visibleEndMinutes });
+                        } else {
+                                var openStart = Math.max(dayConfig.start_minutes, visibleStartMinutes);
+                                var openEnd = Math.min(dayConfig.end_minutes, visibleEndMinutes);
+
+                                if (openEnd <= visibleStartMinutes || openStart >= visibleEndMinutes) {
+                                        busySegments.push({ start: visibleStartMinutes, end: visibleEndMinutes });
+                                } else {
+                                        if (openStart > visibleStartMinutes) {
+                                                busySegments.push({ start: visibleStartMinutes, end: openStart });
+                                        }
+
+                                        if (openEnd < visibleEndMinutes) {
+                                                busySegments.push({ start: Math.max(openEnd, visibleStartMinutes), end: visibleEndMinutes });
+                                        }
+                                }
+                        }
+
+                        busySegments.forEach(function(segment) {
+                                if (segment.start >= segment.end) {
+                                        return;
+                                }
+
+                                var segmentStartDate = new Date(dayCursor.getFullYear(), dayCursor.getMonth(), dayCursor.getDate(), 0, 0, 0);
+                                segmentStartDate.setMinutes(segment.start);
+
+                                var segmentEndDate = new Date(dayCursor.getFullYear(), dayCursor.getMonth(), dayCursor.getDate(), 0, 0, 0);
+                                segmentEndDate.setMinutes(segment.end);
+
+                                userIds.forEach(function(userId) {
+                                        var entry = {
+                                                start: cloneDate(segmentStartDate),
+                                                end: cloneDate(segmentEndDate),
+                                                free: false,
+                                                className: 'closed-hours'
+                                        };
+
+                                        if (userId !== null && userId !== undefined) {
+                                                entry.userId = userId;
+                                        }
+
+                                        freeBusys.push(entry);
+                                });
+                        });
+
+                        dayCursor.setDate(dayCursor.getDate() + 1);
+                }
+
+                return freeBusys;
+        }
+
+        function updateBookingStatus(bookingId, newStatus) {
 
 		let updateHref = '/appointmentpro/booking/update-status/bstatus/' + newStatus + '/id/' + bookingId;
 		swal({
