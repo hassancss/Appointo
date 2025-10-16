@@ -197,6 +197,10 @@ class Appointmentpro_Model_Db_Table_Booking extends Core_Model_Db_Table
                 $select->where('a.service_id = ?', $queries['service_id']);
             }
 
+            if (array_key_exists("customer_id", $queries) && $queries['customer_id'] != 'all' && $queries['customer_id'] != '') {
+                $select->where('a.customer_id = ?', $queries['customer_id']);
+            }
+
 
             if (array_key_exists("provider_id", $queries) && $queries['provider_id'] != 'all' && $queries['provider_id'] != '') {
                 $select->where('a.service_provider_id = ?', $queries['provider_id']);
@@ -952,6 +956,9 @@ class Appointmentpro_Model_Db_Table_Booking extends Core_Model_Db_Table
                 $select->where('a.service_id = ?', $queries['service_id']);
             }
 
+            if (array_key_exists("customer_id", $queries) && $queries['customer_id'] != 'all' && $queries['customer_id'] != '') {
+                $select->where('a.customer_id = ?', $queries['customer_id']);
+            }
 
             if (array_key_exists("provider_id", $queries) && $queries['provider_id'] != 'all' && $queries['provider_id'] != '') {
                 $select->where('a.service_provider_id = ?', $queries['provider_id']);
