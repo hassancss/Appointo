@@ -3,7 +3,7 @@ $(document).ready(function() {
    var id = 10;
    $calendar.weekCalendar({
       displayOddEven:true,
-      timeslotsPerHour : 12,
+      timeslotsPerHour : 2,
       allowCalEventOverlap : false,
       overlapEventsSeparate: false,
       firstDayOfWeek : 1,

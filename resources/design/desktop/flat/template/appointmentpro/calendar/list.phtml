@@ -945,11 +945,11 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			return false;
 		}
 
-		$('#calendar').weekCalendar({
-			timeslotHeight: 30,
-			hourLine: false,
-			displayOddEven: true,
-			timeslotsPerHour: 12,
+                $('#calendar').weekCalendar({
+                        timeslotHeight: 30,
+                        hourLine: false,
+                        displayOddEven: true,
+                        timeslotsPerHour: 2,
 			allowCalEventOverlap: false,
 			overlapEventsSeparate: false,
 			firstDayOfWeek: 1,
@@ -987,9 +987,9 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			readonly: false,
 			allowEventCreation: true,
 			use24Hour: use24hours,
-			// Snap new events to exact time slots
-			timeslotSnap: true,
-			defaultEventLength: 2, // Default 10 minutes duration (2 slots × 5 minutes = 10 minutes)
+                        // Snap new events to exact time slots
+                        timeslotSnap: true,
+                        defaultEventLength: 1, // Default 30 minutes duration (1 slot × 30 minutes)
 			// Only allow dragging/resizing for events that are not read-only (new unsaved events)
 			draggable: function(calEvent, $event) {
 				return calEvent.readOnly != true;
