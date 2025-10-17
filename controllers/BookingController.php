@@ -178,13 +178,14 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                 $notesData[] = [
                     'appointment_id' => (int) $note['appointment_id'],
                     'note' => $noteText,
-                    'date_label' => $dateLabel,
+                    'date_label' => $dateLabel                    
                 ];
             }
 
             $payload = [
                 'success' => true,
-                'notes' => $notesData
+                'notes' => $notesData,
+                'raw_notes' => $notes,
             ];
         } catch (\Exception $e) {
             $payload = [
