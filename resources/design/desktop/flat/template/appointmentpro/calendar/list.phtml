@@ -564,7 +564,7 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
         var currentLanguage = '<?php echo Core_Model_Language::getCurrentLanguage(); ?>';
         var businessHoursByDay = <?php echo json_encode($currentLocation['business_hours_by_day'] ?? []); ?>;
         var hasActiveBusinessHours = <?php echo !empty($currentLocation['is_business_timing']) ? 'true' : 'false'; ?>;
-        var defaultSlotDurationMinutes = 30;
+        var defaultSlotDurationMinutes = 5;
         var selectedSlotDurationMinutes = defaultSlotDurationMinutes;
 
         startTime = parseInt(startTime, 10);
@@ -1016,10 +1016,10 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		}
 
                 $('#calendar').weekCalendar({
-                        timeslotHeight: 30,
+                        timeslotHeight: 18,
                         hourLine: false,
                         displayOddEven: true,
-                        timeslotsPerHour: 2,
+                        timeslotsPerHour: 12,
 			allowCalEventOverlap: false,
 			overlapEventsSeparate: false,
 			firstDayOfWeek: 1,
@@ -1059,7 +1059,7 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			use24Hour: use24hours,
                         // Snap new events to exact time slots
                         timeslotSnap: true,
-                        defaultEventLength: 1, // Default 30 minutes duration (1 slot × 30 minutes)
+                        defaultEventLength: 6, // Default 30 minutes duration (6 slots × 5 minutes)
 			// Only allow dragging/resizing for events that are not read-only (new unsaved events)
 			draggable: function(calEvent, $event) {
 				return calEvent.readOnly != true;
