@@ -135,17 +135,17 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		border-radius: 4px;
 	}
 
-	.price-section,
-	.time-section {
-		flex: 1;
-	}
+        .price-section,
+        .time-section {
+                flex: 1;
+        }
 
-	.price-section label,
-	.time-section label {
-		font-size: 12px;
-		color: #6c757d;
-		margin-bottom: 2px;
-	}
+        .price-section label,
+        .time-section label {
+                font-size: 12px;
+                color: #6c757d;
+                margin-bottom: 2px;
+        }
 
 	.price-section span,
 	.time-section span {
@@ -183,6 +183,18 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 
         .search-result-item:last-child {
                 border-bottom: none;
+        }
+
+        .time-input-wrapper {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+        }
+
+        .time-display-value {
+                font-weight: bold;
+                color: #495057;
+                font-size: 13px;
         }
 
         .wc-freebusy.closed-hours {
@@ -418,21 +430,27 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				</div>
 			</div>
 
-			<div class="form-row">
-				<div class="form-group col-md-12">
-					<label><?php echo p__("appointmentpro", "Selected Time Slot"); ?>*</label>
-					<div class="price-time-display">
-						<div class="price-section">
-							<label><?php echo p__("appointmentpro", "Start Time"); ?></label>
-							<span id="selected_start_time">-</span>
-						</div>
-						<div class="time-section">
-							<label><?php echo p__("appointmentpro", "End Time"); ?></label>
-							<span id="selected_end_time">-</span>
-						</div>
-					</div>
-				</div>
-			</div>
+                        <div class="form-row">
+                                <div class="form-group col-md-12">
+                                        <label><?php echo p__("appointmentpro", "Selected Time Slot"); ?>*</label>
+                                        <div class="price-time-display">
+                                                <div class="price-section">
+                                                        <label for="selected_start_time_input"><?php echo p__("appointmentpro", "Start Time"); ?></label>
+                                                        <div class="time-input-wrapper">
+                                                                <input type="time" id="selected_start_time_input" class="form-control" step="1800" />
+                                                                <span id="selected_start_time" class="time-display-value">-</span>
+                                                        </div>
+                                                </div>
+                                                <div class="time-section">
+                                                        <label for="selected_end_time_input"><?php echo p__("appointmentpro", "End Time"); ?></label>
+                                                        <div class="time-input-wrapper">
+                                                                <input type="time" id="selected_end_time_input" class="form-control" step="1800" />
+                                                                <span id="selected_end_time" class="time-display-value">-</span>
+                                                        </div>
+                                                </div>
+                                        </div>
+                                </div>
+                        </div>
 
 			<div class="form-row">
 				<div class="form-group col-md-4">
@@ -546,6 +564,8 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
         var currentLanguage = '<?php echo Core_Model_Language::getCurrentLanguage(); ?>';
         var businessHoursByDay = <?php echo json_encode($currentLocation['business_hours_by_day'] ?? []); ?>;
         var hasActiveBusinessHours = <?php echo !empty($currentLocation['is_business_timing']) ? 'true' : 'false'; ?>;
+        var defaultSlotDurationMinutes = 30;
+        var selectedSlotDurationMinutes = defaultSlotDurationMinutes;
 
         startTime = parseInt(startTime, 10);
         endTime = parseInt(endTime, 10);
@@ -789,12 +809,62 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			return result;
 		}
 
-		function formatDateConsistently(date) {
-			return (date.getMonth() + 1) + '/' + date.getDate() + '/' + date.getFullYear();
-		}
+                function formatDateConsistently(date) {
+                        return (date.getMonth() + 1) + '/' + date.getDate() + '/' + date.getFullYear();
+                }
 
-		// Test function to verify time formatting
-		function testTimeFormatting() {
+                function formatTimeStringForDisplay(timeStr) {
+                        if (!timeStr) {
+                                return '-';
+                        }
+
+                        var parsedDate = parseTimeString(timeStr);
+                        if (!parsedDate) {
+                                return timeStr;
+                        }
+
+                        return formatTimeForDisplay(parsedDate);
+                }
+
+                function setSingleTimeField(inputSelector, hiddenSelector, displaySelector, timeValue) {
+                        if (timeValue) {
+                                $(hiddenSelector).val(timeValue);
+                                $(inputSelector).val(timeValue);
+                                $(displaySelector).text(formatTimeStringForDisplay(timeValue));
+                        } else {
+                                $(hiddenSelector).val('');
+                                $(inputSelector).val('');
+                                $(displaySelector).text('-');
+                        }
+                }
+
+                function setTimeFields(startTimeForm, endTimeForm) {
+                        setSingleTimeField('#selected_start_time_input', '#appointment_time', '#selected_start_time', startTimeForm);
+                        setSingleTimeField('#selected_end_time_input', '#appointment_end_time', '#selected_end_time', endTimeForm);
+
+                        var startDate = parseTimeString(startTimeForm);
+                        var endDate = parseTimeString(endTimeForm);
+
+                        if (startDate && endDate && endDate.getTime() > startDate.getTime()) {
+                                var calculatedDuration = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60));
+                                selectedSlotDurationMinutes = calculatedDuration > 0 ? calculatedDuration : defaultSlotDurationMinutes;
+                        } else if (!startDate || !endDate) {
+                                selectedSlotDurationMinutes = defaultSlotDurationMinutes;
+                        }
+                }
+
+                function revalidateServiceDurationIfNeeded() {
+                        var serviceDuration = $('#service_duration').text();
+                        if (serviceDuration && serviceDuration !== '-') {
+                                var serviceDurationMinutes = parseInt(serviceDuration, 10) || 0;
+                                if (serviceDurationMinutes > 0) {
+                                        validateTimeSlotDuration(serviceDurationMinutes);
+                                }
+                        }
+                }
+
+                // Test function to verify time formatting
+                function testTimeFormatting() {
 			var testDate = new Date();
 			testDate.setHours(14, 30, 0, 0); // 2:30 PM
 
@@ -945,11 +1015,11 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			return false;
 		}
 
-		$('#calendar').weekCalendar({
-			timeslotHeight: 30,
-			hourLine: false,
-			displayOddEven: true,
-			timeslotsPerHour: 12,
+                $('#calendar').weekCalendar({
+                        timeslotHeight: 30,
+                        hourLine: false,
+                        displayOddEven: true,
+                        timeslotsPerHour: 2,
 			allowCalEventOverlap: false,
 			overlapEventsSeparate: false,
 			firstDayOfWeek: 1,
@@ -987,9 +1057,9 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			readonly: false,
 			allowEventCreation: true,
 			use24Hour: use24hours,
-			// Snap new events to exact time slots
-			timeslotSnap: true,
-			defaultEventLength: 2, // Default 10 minutes duration (2 slots × 5 minutes = 10 minutes)
+                        // Snap new events to exact time slots
+                        timeslotSnap: true,
+                        defaultEventLength: 1, // Default 30 minutes duration (1 slot × 30 minutes)
 			// Only allow dragging/resizing for events that are not read-only (new unsaved events)
 			draggable: function(calEvent, $event) {
 				return calEvent.readOnly != true;
@@ -1183,22 +1253,17 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 					});
 
 					// Set the date and time in the form
-					$('#appointment_date').val(appointmentDate);
-					$('#appointment_time').val(startTimeForm);
-					$('#appointment_end_time').val(endTimeForm);
+                                        $('#appointment_date').val(appointmentDate);
+                                        setTimeFields(startTimeForm, endTimeForm);
 
-					// Update selected time slot display (always use 12-hour format for display)
-					$('#selected_start_time').text(startTimeDisplay);
-					$('#selected_end_time').text(endTimeDisplay);
-
-					// Debug log to verify what values are actually set
-					console.log('Form field values set:', {
-						'appointment_date field': $('#appointment_date').val(),
-						'appointment_time field': $('#appointment_time').val(),
-						'appointment_end_time field': $('#appointment_end_time').val(),
-						'selected_start_time display': $('#selected_start_time').text(),
-						'selected_end_time display': $('#selected_end_time').text()
-					});
+                                        // Debug log to verify what values are actually set
+                                        console.log('Form field values set:', {
+                                                'appointment_date field': $('#appointment_date').val(),
+                                                'appointment_time field': $('#appointment_time').val(),
+                                                'appointment_end_time field': $('#appointment_end_time').val(),
+                                                'selected_start_time display': $('#selected_start_time').text(),
+                                                'selected_end_time display': $('#selected_end_time').text()
+                                        });
 
 					// Additional debugging to check DOM state
 					console.log('=== DOM STATE CHECK ===');
@@ -1303,13 +1368,8 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 						console.log('Form data loaded, now auto-selecting location and provider');
 
 						// Set the date and time in the form
-						$('#appointment_date').val(appointmentDate);
-						$('#appointment_time').val(startTimeForm);
-						$('#appointment_end_time').val(endTimeForm);
-
-						// Update selected time slot display
-						$('#selected_start_time').text(startTimeDisplay);
-						$('#selected_end_time').text(endTimeDisplay);
+                                                $('#appointment_date').val(appointmentDate);
+                                                setTimeFields(startTimeForm, endTimeForm);
 
 						console.log('Time values set');
 
@@ -1562,8 +1622,8 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 		}
 
 		// Function to update modal time selection when calendar event changes
-		function updateModalTimeSelection(calEvent) {
-			console.log('=== UPDATING MODAL TIME SELECTION ===');
+                function updateModalTimeSelection(calEvent) {
+                        console.log('=== UPDATING MODAL TIME SELECTION ===');
 			console.log('calEvent object:', calEvent);
 			console.log('calEvent.start:', calEvent.start, 'Type:', typeof calEvent.start);
 			console.log('calEvent.end:', calEvent.end, 'Type:', typeof calEvent.end);
@@ -1590,13 +1650,8 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			});
 
 			// Update the form fields (whether modal is open or not)
-			$('#appointment_date').val(appointmentDate);
-			$('#appointment_time').val(startTimeForm);
-			$('#appointment_end_time').val(endTimeForm);
-
-			// Update selected time slot display (always use 12-hour format for display)
-			$('#selected_start_time').text(startTimeDisplay);
-			$('#selected_end_time').text(endTimeDisplay);
+                        $('#appointment_date').val(appointmentDate);
+                        setTimeFields(startTimeForm, endTimeForm);
 
 			// Debug log to verify what values are actually set in modal update
 			console.log('Modal updated - Form field values set:', {
@@ -1604,24 +1659,64 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 				'appointment_time field': $('#appointment_time').val(),
 				'appointment_end_time field': $('#appointment_end_time').val(),
 				'selected_start_time display': $('#selected_start_time').text(),
-				'selected_end_time display': $('#selected_end_time').text(),
-				'modal_is_visible': $('#new_appointment_modal').is(':visible')
-			});
+                                'selected_end_time display': $('#selected_end_time').text(),
+                                'modal_is_visible': $('#new_appointment_modal').is(':visible')
+                        });
 
-			// If a service is selected, revalidate the time slot duration
-			var serviceDuration = $('#service_duration').text();
-			if (serviceDuration && serviceDuration !== '-') {
-				var serviceDurationMinutes = parseInt(serviceDuration) || 0;
-				if (serviceDurationMinutes > 0) {
-					validateTimeSlotDuration(serviceDurationMinutes);
-				}
-			}
+                        // If a service is selected, revalidate the time slot duration
+                        revalidateServiceDurationIfNeeded();
 
-			console.log('=== END UPDATING MODAL TIME SELECTION ===');
-		}
+                        console.log('=== END UPDATING MODAL TIME SELECTION ===');
+                }
 
-		// Function to load initial form data (only locations and static data)
-		function loadAppointmentFormData(callback) {
+                $('#selected_start_time_input').bind('change', function() {
+                        var startValue = $(this).val();
+                        var endValue = $('#selected_end_time_input').val();
+
+                        if (!startValue) {
+                                setTimeFields('', endValue);
+                                revalidateServiceDurationIfNeeded();
+                                return;
+                        }
+
+                        var startDate = parseTimeString(startValue);
+                        var endDate = parseTimeString(endValue);
+
+                        if (startDate) {
+                                if (!endDate || endDate.getTime() <= startDate.getTime()) {
+                                        var adjustedEnd = new Date(startDate.getTime() + selectedSlotDurationMinutes * 60000);
+                                        endValue = formatTimeForForm(adjustedEnd);
+                                }
+                        }
+
+                        setTimeFields(startValue, endValue);
+                        revalidateServiceDurationIfNeeded();
+                });
+
+                $('#selected_end_time_input').bind('change', function() {
+                        var startValue = $('#selected_start_time_input').val();
+                        var endValue = $(this).val();
+
+                        if (!endValue) {
+                                setTimeFields(startValue, '');
+                                revalidateServiceDurationIfNeeded();
+                                return;
+                        }
+
+                        var startDate = parseTimeString(startValue);
+                        var endDate = parseTimeString(endValue);
+
+                        if (startDate && endDate && endDate.getTime() <= startDate.getTime()) {
+                                var adjustedEnd = new Date(startDate.getTime() + selectedSlotDurationMinutes * 60000);
+                                endValue = formatTimeForForm(adjustedEnd);
+                        }
+
+                        setTimeFields(startValue, endValue);
+                        revalidateServiceDurationIfNeeded();
+                });
+
+                // Function to load initial form data (only locations and static data)
+                function loadAppointmentFormData(callback) {
 			$.ajax({
 				url: '/appointmentpro/booking/get-form-data',
 				type: 'POST',
@@ -2619,9 +2714,8 @@ $minDate = date('d-m-Y', strtotime("-7 days"));
 			$('#service_price').text('-');
 			$('#service_duration').text('-');
 
-			// Reset selected time slot display
-			$('#selected_start_time').text('-');
-			$('#selected_end_time').text('-');
+                        // Reset selected time slot inputs and display
+                        setTimeFields('', '');
 
 			// Re-enable location and provider dropdowns (they might have been disabled by auto-selection)
 			$('#appointment_location').attr('disabled', false);
