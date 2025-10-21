@@ -105,10 +105,10 @@ class Appointmentpro_Mobile_ProviderController extends Application_Controller_Mo
                             // Don't change timeDiff here - it should remain the actual service time for conflict checking
                         }
 
-                        // Generate time slots using 5-minute intervals for booking
-                        $timeBound = strtotime('-5 minutes', $toTime);
+                        // Generate time slots using 30-minute intervals for booking
+                        $timeBound = strtotime('-30 minutes', $toTime);
                         if ($timeDiff > 0) {
-                            for ($i = $fromTime; $i <= $timeBound; $i = strtotime('+5 minutes', $i)) {
+                            for ($i = $fromTime; $i <= $timeBound; $i = strtotime('+30 minutes', $i)) {
                                 $timeArray[] = $i;
                             }
                         }

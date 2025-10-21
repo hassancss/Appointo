@@ -197,10 +197,6 @@ class Appointmentpro_Model_Db_Table_Booking extends Core_Model_Db_Table
                 $select->where('a.service_id = ?', $queries['service_id']);
             }
 
-            if (array_key_exists("customer_id", $queries) && $queries['customer_id'] != 'all' && $queries['customer_id'] != '') {
-                $select->where('a.customer_id = ?', $queries['customer_id']);
-            }
-
 
             if (array_key_exists("provider_id", $queries) && $queries['provider_id'] != 'all' && $queries['provider_id'] != '') {
                 $select->where('a.service_provider_id = ?', $queries['provider_id']);
@@ -956,9 +952,6 @@ class Appointmentpro_Model_Db_Table_Booking extends Core_Model_Db_Table
                 $select->where('a.service_id = ?', $queries['service_id']);
             }
 
-            if (array_key_exists("customer_id", $queries) && $queries['customer_id'] != 'all' && $queries['customer_id'] != '') {
-                $select->where('a.customer_id = ?', $queries['customer_id']);
-            }
 
             if (array_key_exists("provider_id", $queries) && $queries['provider_id'] != 'all' && $queries['provider_id'] != '') {
                 $select->where('a.service_provider_id = ?', $queries['provider_id']);
@@ -1096,6 +1089,7 @@ class Appointmentpro_Model_Db_Table_Booking extends Core_Model_Db_Table
                 "a.is_add_plc_points",
                 "a.created_at",
                 "a.created_source", // Add created_source column
+                "a.service_provider_id_2", // Add second provider ID for break time services
                 "total_bookings" => new Zend_Db_Expr('(' . $this->_db->select()->from(array('b' =>  $this->_name), array(new Zend_Db_Expr('COUNT(b.appointment_id)')))->where('b.appointment_date = a.appointment_date')->where('b.appointment_time = a.appointment_time')->where('b.service_provider_id = a.service_provider_id')->where('b.status NOT IN (?)', [5, 6, 8])->where('b.is_delete = ?', 0) . ')')
                 //  "total_bookings" => new Zend_Db_Expr('(' . $this->_db->select()->from(array('b' =>  $this->_name), array(new Zend_Db_Expr('COUNT(b.appointment_id)')))->where('b.appointment_date = a.appointment_date')->where('b.appointment_time = a.appointment_time')->where('b.service_provider_id = a.service_provider_id')->where('b.status IN (?)', [2, 3, 4, 9]) . ')')
             ])

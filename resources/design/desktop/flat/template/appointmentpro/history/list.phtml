@@ -70,12 +70,18 @@ $services = $this->getServices();
 
                                                 </div>
                                                 <div class="col-md-12">
-                                                    <table id="dynamic-location" class="table content-white-bkg sb-pager" >
+                                                    <table id="dynamic-location" class="table content-white-bkg sb-pager" style="display:none;">
                                                         <thead>
                                                             <tr class="border-grey">
                                                                 <th style="width: 10%"><?php echo  p__("appointmentpro", "ID"); ?></th>
                                                                 <th style="width: 40%"><?php echo  p__("appointmentpro", "Customer"); ?> / <?php echo  p__("appointmentpro", "Location"); ?> / <?php echo  p__("appointmentpro", "Service"); ?></th>
-                                                                <th style="width: 40%"><?php echo  p__("appointmentpro", "Date"); ?></th>                                                                
+                                                                <th style="width: 40%"><?php echo  p__("appointmentpro", "Date"); ?></th>
+                                                                <!-- <th style="width: 15%"><?php //echo  p__("appointmentpro", "Slot"); 
+                                                                                            ?></th> -->
+                                                                <!-- <th style="width: 15%"><?php //echo  p__("appointmentpro", "Amount"); 
+                                                                                            ?></th> -->
+                                                                <!-- <th style="width: 10%"><?php //echo  p__("appointmentpro", "Status"); 
+                                                                                            ?></th> -->
                                                                 <th style="width: 10%"><?php echo  p__("appointmentpro", "Action"); ?></th>
                                                             </tr>
                                                         </thead>

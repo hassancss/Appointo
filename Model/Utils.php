@@ -20,7 +20,7 @@ class Appointmentpro_Model_Utils
         while ($tNow <= $tEnd) {
             $timestamp = (date("H", $tNow) * 3600) + (date("i", $tNow) * 60);
             $return[$timestamp] = date($format, $tNow);
-            $tNow = strtotime('+5 minutes', $tNow);
+            $tNow = strtotime('+30 minutes', $tNow);
         }
         return $return;
     }
@@ -279,7 +279,7 @@ class Appointmentpro_Model_Utils
         }
 
         // Original logic for services without breaks
-        $perSlotTime = 5; // minutes per slot
+        $perSlotTime = 30; //min - Changed to 30-minute intervals
         $totalRequiredSlots = ($timeDiff / $perSlotTime);
         $convertTimeArray = [];
         $format = ''; // Default format
@@ -319,7 +319,7 @@ class Appointmentpro_Model_Utils
      */
     public function filterTimeSlotWithBreaks($timeArray, $breakInfo)
     {
-        $perSlotTime = 5; // minutes per slot
+        $perSlotTime = 30; // min - Changed to 30-minute intervals
         $convertTimeArray = [];
         $format = ''; // Will be set based on settings
 
