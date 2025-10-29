@@ -183,72 +183,114 @@ class Appointmentpro_Model_Utils
      * @param int $currentServiceId
      * @return array
      */
-    public function checkAppointmentWithBreaks($appointmentData, $timeArray, $timeDiff, $totalBookingPerSlot, $breakInfo, $currentServiceId)
+    /**
+     * Check appointments with break time considerations
+     *
+     * @param array $appointmentData
+     * @param array $timeArray
+     * @param int $timeDiff
+     * @param int $totalBookingPerSlot
+     * @param array $breakInfo
+     * @param int $currentServiceId
+     * @param int $providerId
+     * @return array
+     */
+    /**
+     * Check appointments with break time considerations
+     *
+     * @param array $appointmentData
+     * @param array $timeArray
+     * @param int $timeDiff
+     * @param int $totalBookingPerSlot
+     * @param array $breakInfo
+     * @param int $currentServiceId
+     * @param int $providerId
+     * @return array
+     */
+    public function checkAppointmentWithBreaks($appointmentData, $timeArray, $timeDiff, $totalBookingPerSlot, $breakInfo, $currentServiceId, $providerId)
     {
         $availableSlots = [];
 
-        // Get current service break configuration
         $db = Zend_Db_Table::getDefaultAdapter();
-        $select = $db->select()
-            ->from('appointment_service_break_config')
-            ->where('service_id = ?', $currentServiceId);
-        $currentServiceBreakData = $db->fetchRow($select);
-
         $currentServiceDuration = $timeDiff * 60; // Convert minutes to seconds
 
         foreach ($timeArray as $timeKey => $potentialStartTime) {
             $canBook = true;
             $potentialEndTime = $potentialStartTime + $currentServiceDuration;
 
-            // Check against all existing appointments
             foreach ($appointmentData as $existingAppointment) {
                 $existingStart = $existingAppointment['appointment_time'];
                 $existingEnd = $existingAppointment['appointment_end_time'];
+                $primaryProvider = $existingAppointment['service_provider_id'] ?? null;
+                $secondaryProvider = $existingAppointment['service_provider_id_2'] ?? null;
 
-                // Get break config for existing appointment
+                $isPrimaryProvider = ($primaryProvider && $primaryProvider == $providerId);
+                $isSecondaryProvider = ($secondaryProvider && $secondaryProvider == $providerId);
+
+                if (!$isPrimaryProvider && !$isSecondaryProvider) {
+                    continue;
+                }
+
                 $select = $db->select()
                     ->from('appointment_service_break_config')
                     ->where('service_id = ?', $existingAppointment['service_id']);
                 $existingBreakData = $db->fetchRow($select);
 
-                if ($existingBreakData && $existingBreakData['break_is_bookable']) {
-                    // Existing appointment has break time
-                    $existingWorkBefore = $existingBreakData['work_time_before_break'] * 60;
-                    $existingBreakDuration = $existingBreakData['break_duration'] * 60;
-                    $existingWorkAfter = $existingBreakData['work_time_after_break'] * 60;
+                if ($existingBreakData && !empty($existingBreakData['has_break_time'])) {
+                    $workBefore = $existingBreakData['work_time_before_break'] * 60;
+                    $breakDuration = $existingBreakData['break_duration'] * 60;
+                    $workAfter = $existingBreakData['work_time_after_break'] * 60;
+                    $breakIsBookable = (bool) $existingBreakData['break_is_bookable'];
 
-                    // Define existing appointment periods
                     $firstWorkStart = $existingStart;
-                    $firstWorkEnd = $existingStart + $existingWorkBefore;
+                    $firstWorkEnd = $existingStart + $workBefore;
                     $breakStart = $firstWorkEnd;
-                    $breakEnd = $breakStart + $existingBreakDuration;
+                    $breakEnd = $breakStart + $breakDuration;
                     $secondWorkStart = $breakEnd;
                     $secondWorkEnd = $existingEnd;
 
-                    // Special logic: Allow bookings during break periods
-                    // But ensure the entire booking fits within the break period
-                    if ($potentialStartTime >= $breakStart && $potentialStartTime < $breakEnd) {
-                        // Starting during break period - check if entire booking fits in break
-                        if ($potentialEndTime <= $breakEnd) {
-                            // Entire booking fits within break period - allow it
-                            continue; // Don't block this slot, check next appointment
-                        } else {
-                            // Booking would extend into second work period - not allowed
+                    $busyIntervals = [];
+
+                    if ($breakIsBookable) {
+                        if ($isPrimaryProvider) {
+                            if ($secondaryProvider && $secondaryProvider != $primaryProvider) {
+                                $busyIntervals[] = [$firstWorkStart, $firstWorkEnd];
+                            } else {
+                                $busyIntervals[] = [$firstWorkStart, $firstWorkEnd];
+                                $busyIntervals[] = [$secondWorkStart, $secondWorkEnd];
+                            }
+                        }
+
+                        if ($isSecondaryProvider) {
+                            $busyIntervals[] = [$secondWorkStart, $secondWorkEnd];
+                        }
+
+                        if ($potentialStartTime >= $breakStart && $potentialStartTime < $breakEnd) {
+                            if ($potentialEndTime <= $breakEnd) {
+                                continue;
+                            } else {
+                                $canBook = false;
+                                break;
+                            }
+                        }
+                    } else {
+                        if ($isPrimaryProvider || $isSecondaryProvider) {
+                            $busyIntervals[] = [$existingStart, $existingEnd];
+                        }
+                    }
+
+                    foreach ($busyIntervals as $interval) {
+                        list($busyStart, $busyEnd) = $interval;
+                        if (!($potentialEndTime <= $busyStart || $potentialStartTime >= $busyEnd)) {
                             $canBook = false;
                             break;
                         }
                     }
 
-                    // For bookings NOT starting in break period, check work period overlaps
-                    $overlapsFirstWork = !($potentialEndTime <= $firstWorkStart || $potentialStartTime >= $firstWorkEnd);
-                    $overlapsSecondWork = !($potentialEndTime <= $secondWorkStart || $potentialStartTime >= $secondWorkEnd);
-
-                    if ($overlapsFirstWork || $overlapsSecondWork) {
-                        $canBook = false;
+                    if (!$canBook) {
                         break;
                     }
                 } else {
-                    // Existing appointment is regular service - check full duration overlap
                     if (!($potentialEndTime <= $existingStart || $potentialStartTime >= $existingEnd)) {
                         $canBook = false;
                         break;

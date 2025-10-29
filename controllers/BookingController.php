@@ -1015,11 +1015,11 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                             $total_booking_per_slot = (int) $queryData['spData']['total_booking_per_slot'];
 
                             // Check if ANY existing appointments have break time configuration
-                            $hasExistingBreaks = false;
+                            $hasExistingBreaks = $hasBreakTime;
                             foreach ($queryData['appointments'] as $existingApp) {
                                 $existingBreakConfig = (new Appointmentpro_Model_ServiceBreakConfig())
                                     ->find(['service_id' => $existingApp['service_id']]);
-                                if ($existingBreakConfig->getId() && $existingBreakConfig->getBreakIsBookable()) {
+                                if ($existingBreakConfig->getId() && $existingBreakConfig->getHasBreakTime()) {
                                     $hasExistingBreaks = true;
                                     break;
                                 }
@@ -1034,7 +1034,8 @@ class Appointmentpro_BookingController extends Application_Controller_Default
                                     $timeDiff,
                                     $total_booking_per_slot,
                                     $breakInfo,
-                                    $inputParams['service_id']
+                                    $inputParams['service_id'],
+                                    $inputParams['provider_id']
                                 );
                             } else {
                                 // Regular appointment checking (no breaks anywhere)
