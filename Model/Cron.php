@@ -149,6 +149,9 @@ class Appointmentpro_Model_Cron extends Core_Model_Default
             }
 
             $booking['timeDiff'] = $timeDiff;
+            if (!empty($timeDiff['invalid'])) {
+                continue;
+            }
             if ($timeDiff['months'] !== 0 && ($timeDiff['day'] >= 7 || $timeDiff['day'] < 0) && $timeDiff['hours'] < 0) continue;
 
             $daysMin = $timeDiff['day'] * 1440;
@@ -157,7 +160,6 @@ class Appointmentpro_Model_Cron extends Core_Model_Default
             $booking['reminder_time'] = empty($booking['reminder_time']) ? 120 : (int)$booking['reminder_time'];
             if (($booking['reminder_time'] >= $booking['totalMinRemaining']) && $booking['is_reminder_sent'] != 1) {                
                 $temp['found'][] = $booking['appointment_id'];
-                $count++;
                 $update=(new Appointmentpro_Model_Booking())->reminderSent($booking['appointment_id']);                          
                 $subject = p__('appointmentpro', 'Booking Reminder - %s', $booking['app_name']);
                 $message = p__('appointmentpro', 'This is reminder that you have a %s booking at %s on %s at %s.', '<b>' . $booking['service_name'] . '</b>', '<b>' . $booking['location_name'] . '</b>', '<b>' . $booking['booking_date'] . '</b>', '<b>' . $booking['start_time'] . '</b>');
@@ -228,7 +230,14 @@ class Appointmentpro_Model_Cron extends Core_Model_Default
 
         // Check if the dates were parsed correctly
         if (!$dateTimeFirst || !$dateTimeSecond) {
-            return "Error: One or both dates could not be parsed.";
+            return [
+                'invalid' => true,
+                'months' => 0,
+                'day' => 0,
+                'hours' => 0,
+                'mins' => 0,
+                'secs' => 0,
+            ];
         }
 
         // Calculate the difference in seconds between the two dates
@@ -236,7 +245,7 @@ class Appointmentpro_Model_Cron extends Core_Model_Default
 
         // Calculate the time span components
         $time['months'] = floor($seconds / (3600 * 24 * 30));  // Approximate months
-        $time['days'] = floor($seconds / (3600 * 24));         // Total days
+        $time['day'] = floor($seconds / (3600 * 24));          // Total days
         $time['hours'] = floor($seconds / 3600);               // Total hours
         $time['mins'] = floor(($seconds % 3600) / 60);         // Minutes within the last hour
         $time['secs'] = $seconds % 60;                         // Remaining seconds
