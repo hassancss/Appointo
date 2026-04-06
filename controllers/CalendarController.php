@@ -16,9 +16,17 @@ class Appointmentpro_CalendarController extends Application_Controller_Default
         $value_id = (new Appointmentpro_Model_Appointmentpro())->getCurrentValueId();
         $bookingJson = [];
         $providersJson = [];
+        $location = [];
 
         $locations = (new Appointmentpro_Model_Location())
             ->findByValueId($value_id, []);
+
+        if (empty($location_id)) {
+            foreach ($locations as $defaultLocation) {
+                $location_id = $defaultLocation->getLocationId();
+                break;
+            }
+        }
 
         $setting = (new Appointmentpro_Model_Settings())->find($value_id, "value_id");
         $settingResult = $setting->getData();
